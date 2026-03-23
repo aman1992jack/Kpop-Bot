@@ -1,0 +1,24 @@
+name: KPOP Bot Daily Run
+
+on:
+  schedule:
+    # 這裡設定每天台灣時間早上 9 點執行一次 (UTC 01:00)
+    - cron: '0 1 * * *'
+  workflow_dispatch: # 讓你隨時可以手動測試
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4 lxml
+      - name: Run bot
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: python main.py
