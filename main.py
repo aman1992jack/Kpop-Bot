@@ -1,15 +1,13 @@
 import requests
 import os
 import xml.etree.ElementTree as ET
-import time
 from urllib.parse import quote
 
 discord_webhook_url = os.getenv("DISCORD_WEBHOOK")
-gemini_key = os.getenv("GEMINI_API_KEY")
 
 def fetch_and_send():
-    if not gemini_key:
-        send_to_discord("🛑 嚴重錯誤：找不到 Gemini API Key！請檢查 GitHub Secrets。")
+    if not discord_webhook_url:
+        print("找不到 Discord Webhook 網址")
         return
 
     # 1. 爬蟲去抓網路資料
@@ -19,62 +17,30 @@ def fetch_and_send():
     try:
         res = requests.get(rss_url, timeout=10)
         root = ET.fromstring(res.text)
-        items = root.findall('.//item')[:5]  # 抓前 5 則
+        items = root.findall('.//item')[:10]  # 抓前 10 則來篩選
         
-        news_list = ""
+        report = "📢 **【K-POP 台灣最新情報推播 (純淨直連版)】**\n\n"
+        has_news = False
+        
+        # 2. 純程式碼過濾：找出有重點關鍵字的標題
         for item in items:
             title = item.find('title').text
             link = item.find('link').text
-            news_list += f"- {title} ({link})\n"
             
-        if not news_list:
-            send_to_discord("🤖 目前網路上尚未更新 K-POP 活動資訊。")
-            return
-
-        # 2. 把抓到的資料，寫成給 AI 的指令
-        prompt = f"""
-        你現在是台灣 K-POP 專業情報員。請分析以下最新新聞：
-        {news_list}
-        任務：提取未來三個月在台灣的活動資訊。必須包含：藝人、活動名、演出日期地點、售票日期。
-        格式：『🔥 [藝人] | [活動] | [日期地點] | 售票：[日期]』。若無精準日期也請列出大概時間。
-        """
-        
-        # 3. 連線到 Google 的 2.0 超級大腦！
-        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "safetySettings": [
-                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
-            ]
-        }
-        
-        ai_res = requests.post(api_url, json=payload, timeout=30)
-        res_json = ai_res.json()
-        
-        # 4. 解析 AI 回傳的精美排版
-        final_report = ""
-        if 'candidates' in res_json and len(res_json['candidates']) > 0:
-            final_report = res_json['candidates'][0]['content']['parts'][0]['text']
-        else:
-            final_report = f"❌ AI 拒絕處理！真實報錯原因：\n{res_json}\n\n原始新聞：\n{news_list}"
+            # 只要標題有這些字，就認定是重要情報
+            if any(keyword in title for keyword in ["演唱會", "搶票", "售票", "來台", "開賣"]):
+                report += f"🔥 **{title}**\n🔗 {link}\n\n"
+                has_news = True
+                
+        if not has_news:
+            report += "🤖 目前網路上尚未更新重要的 K-POP 活動資訊。"
             
-        # 5. 發送到你的 Discord
-        full_message = f"📢 **【K-POP 台灣深度情報雷達 (GitHub 滿血版)】**\n\n{final_report}"
-        send_to_discord(full_message)
+        # 3. 直接發送到 Discord
+        requests.post(discord_webhook_url, json={"content": report})
         
     except Exception as e:
-        send_to_discord(f"⚠️ 機器人發生錯誤：{str(e)}")
-
-def send_to_discord(text):
-    # Discord 的極限是 2000 字，這裡設定每次最多傳 1800 字並分段
-    chunk_size = 1800
-    for i in range(0, len(text), chunk_size):
-        chunk = text[i:i+chunk_size]
-        requests.post(discord_webhook_url, json={"content": chunk})
-        time.sleep(1)  # 讓機器人喘口氣，避免被 Discord 擋下
+        error_msg = f"⚠️ 機器人發生錯誤：{str(e)}"
+        requests.post(discord_webhook_url, json={"content": error_msg})
 
 if __name__ == "__main__":
     fetch_and_send()
