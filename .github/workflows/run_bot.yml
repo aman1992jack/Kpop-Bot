@@ -3,7 +3,7 @@ name: KPOP Bot Daily Run
 on:
   schedule:
     # 這裡設定每天台灣時間早上 9 點執行一次 (UTC 01:00)
-    - cron: '0 1 * * *'
+    - cron: 0 3,15 * * *
   workflow_dispatch: # 讓你隨時可以手動測試
 
 jobs:
