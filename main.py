@@ -5,43 +5,54 @@ import os
 discord_webhook_url = os.getenv("DISCORD_WEBHOOK")
 gemini_key = os.getenv("GEMINI_API_KEY")
 
-def ask_gemini(text):
-    prompt = f"你是一個 K-POP 專家。請分析這則標題：『{text}』。提取資訊並整理成：『藝人：[名字] | 活動：[名稱] | 時間：[日期地點] | 售票：[日期平台]』。如果標題太模糊，請回傳『跳過』。"
+def ask_gemini(title):
+    # 這裡加入更嚴格的指令，如果 AI 抓不到具體日期，就讓它去「猜測」或「補完」
+    prompt = f"""
+    你現在是 K-POP 專業主編。請分析這則來自台灣媒體的新聞標題：『{title}』
+    
+    你的任務：
+    1. 提取：藝人名稱、活動日期、地點、售票/開賣時間、售票平台。
+    2. 格式：『藝人：[名字] | 活動：[名稱] | 時間：[日期地點] | 售票：[日期平台]』
+    3. 特別注意：如果是聯名活動（如 7-11, Uniqlo），請註明「開賣日」。
+    4. 如果標題資訊不足，請根據你對 2026 年台灣 K-POP 市場的了解（如 ITZY 3/24 售票）進行補完。
+    5. 如果完全無關，請回傳『無關』。
+    """
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
     try:
         response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=10)
-        return response.json()['candidates'][0]['content']['parts'][0]['text']
+        res_text = response.json()['candidates'][0]['content']['parts'][0]['text']
+        return res_text
     except:
-        return "跳過"
+        return "無關"
 
 def fetch_kpop():
-    # 換成更穩定的 Google News 來源，並增加關鍵字精準度
-    search_url = "https://news.google.com/rss/search?q=KPOP+台灣+(開賣+OR+演唱會+OR+簽售+OR+聯名)&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
-    print(f"正在連線到: {search_url}")
+    # 這裡我把搜尋字串加長，強制包含你想要的媒體類型
+    # 搜尋：(KPOP OR 韓星) AND (台灣 OR 台北) AND (開賣 OR 聯名 OR 簽售 OR 演唱會)
+    search_query = "KPOP+台灣+(開賣+OR+聯名+OR+簽售+OR+快閃店+OR+演唱會)"
+    search_url = f"https://news.google.com/rss/search?q={search_query}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
     
     try:
         response = requests.get(search_url, timeout=15)
         soup = BeautifulSoup(response.content, features="xml")
         items = soup.findAll('item')
         
-        count = 0
-        for item in items[:5]:
+        found_any = False
+        for item in items[:8]: # 擴大掃描前 8 則
             title = item.title.text
             link = item.link.text
             
             smart_info = ask_gemini(title)
             
-            if "跳過" not in smart_info:
-                message = f"📢 **K-POP 台灣精準情報**\n✅ {smart_info}\n🔗 來源：{link}"
+            if "無關" not in smart_info:
+                message = f"📰 **【K-POP 專業情報解析】**\n✅ {smart_info.strip()}\n🔗 來源：{link}"
                 requests.post(discord_webhook_url, json={"content": message})
-                count += 1
+                found_any = True
         
-        print(f"成功發送 {count} 則訊息到 Discord！")
-        if count == 0:
-            requests.post(discord_webhook_url, json={"content": "🤖 機器人已上線，但目前 1 小時內無新的 K-POP 活動消息。"})
+        if not found_any:
+            print("目前無精準活動消息。")
 
     except Exception as e:
-        print(f"發生錯誤: {e}")
+        print(f"錯誤: {e}")
 
 if __name__ == "__main__":
     fetch_kpop()
