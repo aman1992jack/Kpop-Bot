@@ -5,23 +5,27 @@ discord_webhook_url = os.getenv("DISCORD_WEBHOOK")
 gemini_key = os.getenv("GEMINI_API_KEY")
 
 def ask_gemini_safe(prompt_text):
-    # 第一道防線：檢查到底有沒有拿到鑰匙！
     if not gemini_key:
-        return "🛑 嚴重錯誤：找不到 Gemini API Key！請檢查 GitHub 的 run_bot.yml 裡面有沒有加上 env 設定。"
+        return "🛑 嚴重錯誤：找不到 Gemini API Key！"
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={gemini_key}"
+    # 改回確定找得到的 flash 模型，並保留「解除安全封鎖」的強大設定！
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
     payload = {
-        "contents": [{"parts": [{"text": prompt_text}]}]
+        "contents": [{"parts": [{"text": prompt_text}]}],
+        "safetySettings": [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+        ]
     }
     
     try:
         response = requests.post(url, json=payload, timeout=30)
         res_json = response.json()
         
-        # 成功拿到資料
         if 'candidates' in res_json:
             return res_json['candidates'][0]['content']['parts'][0]['text']
-        # 第二道防線：抓出真正的 Google 報錯訊息
         elif 'error' in res_json:
             error_code = res_json['error'].get('code')
             error_msg = res_json['error'].get('message')
@@ -40,7 +44,7 @@ def run_daily_report():
     請用 Markdown 列表格式輸出。
     """
     report = ask_gemini_safe(info_text)
-    requests.post(discord_webhook_url, json={"content": f"📢 **K-POP 深度情報 (PRO 級 Debug)**\n\n{report}"})
+    requests.post(discord_webhook_url, json={"content": f"📢 **K-POP 深度情報 (解除封印版)**\n\n{report}"})
 
 if __name__ == "__main__":
     run_daily_report()
