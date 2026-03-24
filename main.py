@@ -17,17 +17,16 @@ def fetch_and_send():
     try:
         res = requests.get(rss_url, timeout=10)
         root = ET.fromstring(res.text)
-        items = root.findall('.//item')[:10]  # 抓前 10 則來篩選
+        items = root.findall('.//item')[:10]
         
-        report = "📢 **【K-POP 台灣最新情報推播 (純淨直連版)】**\n\n"
+        report = "📢 **【K-POP 台灣最新情報推播 (直連版)】**\n\n"
         has_news = False
         
-        # 2. 純程式碼過濾：找出有重點關鍵字的標題
+        # 2. 純程式碼過濾重點
         for item in items:
             title = item.find('title').text
             link = item.find('link').text
             
-            # 只要標題有這些字，就認定是重要情報
             if any(keyword in title for keyword in ["演唱會", "搶票", "售票", "來台", "開賣"]):
                 report += f"🔥 **{title}**\n🔗 {link}\n\n"
                 has_news = True
