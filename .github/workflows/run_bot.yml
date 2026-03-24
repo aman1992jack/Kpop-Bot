@@ -16,8 +16,9 @@ jobs:
         with:
           python-version: '3.9'
       - name: Install dependencies
-        run: pip install requests beautifulsoup4 lxml
+        run: pip install requests
       - name: Run bot
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python main.py
