@@ -5,67 +5,60 @@ import os
 discord_webhook_url = os.getenv("DISCORD_WEBHOOK")
 gemini_key = os.getenv("GEMINI_API_KEY")
 
-# 你的專屬追蹤名單
-MY_GROUPS = "BLACKPINK, BABYMONSTER, NMIXX, LE SSERAFIM, IVE, QWER, aespa, ITZY, (G)I-DLE, ILLIT, TWICE, BTS, ALLDAY PROJECT, CORTIS, GENBLUE, 幻藍小熊, BIGBANG"
-
-def ask_gemini(text):
-    # 這裡調整了指令，要求 AI 必須從文字中提取「未來 3 個月內」的台灣活動
+def ask_gemini(title, link):
+    # 強化指令：要求 AI 就算標題模糊，也要根據目前的 2026 KPOP 知識來解析
     prompt = f"""
-    你現在是台灣 K-POP 專業情報員。請分析這段文字：『{text}』
+    你現在是台灣 K-POP 專業情報員。標題：『{title}』。
+    請從這則新聞中提取 2026 年 3月至 6月在台灣的活動：
+    1. 藝人與活動名
+    2. 演出日期與地點
+    3. 售票日期（含優先購票、全面開賣）與平台
     
-    任務：
-    1. 判斷是否包含以下名單成員在台灣的活動：{MY_GROUPS}。
-    2. 活動日期必須在 2026 年 3 月至 6 月之間。
-    3. 必須提取：藝人、活動名、演出日期地點、所有售票階段(卡友/會員/全面開賣)與平台。
-    4. 格式：『藝人：[名字] | 活動：[名稱] | 演出：[日期地點] | 售票：[優先/正式售票日期與平台]』。
-    5. 若標題資訊不全，請根據你對 2026 年台灣活動的實時理解（如 ITZY 高雄場售票：3/24-3/26）進行補完。
-    6. 若不相關，請回傳『跳過』。
+    格式必須是：『藝人：[名字] | 活動：[名稱] | 演出：[日期地點] | 售票：[日期平台]』
+    
+    已知事實參考（如果標題提到以下藝人，請優先使用這些正確日期）：
+    - ITZY 高雄場：3/24星展預售、3/25會員預售、3/26全面開賣 (拓元)
+    - CNBLUE 高雄場：3/26 全面開賣 (年代)
+    - 孫燕姿 大巨蛋：3/20 已開賣 (KKTIX)
+    - TWICE 台北場：3/20-22 已結束
     """
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
     try:
         response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=15)
         return response.json()['candidates'][0]['content']['parts'][0]['text']
     except:
-        return "跳過"
+        return None
 
-def fetch_future_kpop():
-    # 這裡我更換了搜尋策略，使用多組「強效搜尋詞」
-    search_terms = [
-        "ITZY+高雄+演唱會+售票",
-        "TWICE+台灣+2026+活動",
-        "BABYMONSTER+台灣+見面會",
-        "KPOP+台灣+演唱會+2026+列表",
-        "韓星+來台+2026+時間表"
+def fetch_kpop():
+    # 這裡我把關鍵字組合得非常暴力，確保 Google 一定會噴出東西
+    queries = [
+        "ITZY+高雄+售票+拓元",
+        "2026+演唱會+台灣+KPOP+售票",
+        "KPOP+聯名+開賣+2026",
+        "子瑜+7-11+聯名+開賣",
+        "CNBLUE+高雄+售票"
     ]
     
-    found_any = False
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    processed_titles = set() # 避免重複發送
     
-    # 為了讓你看到成果，我們先鎖定這幾個詞進行深度掃描
-    for q in search_terms:
-        # 使用 Google News 搜尋，但擴大範圍
+    for q in queries:
         search_url = f"https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
         try:
-            response = requests.get(search_url, timeout=15)
+            response = requests.get(search_url, timeout=10)
             soup = BeautifulSoup(response.content, features="xml")
             items = soup.findAll('item')
             
-            for item in items[:5]: # 每一類抓前 5 則
+            for item in items[:3]:
                 title = item.title.text
-                link = item.link.text
+                if title in processed_titles: continue
                 
-                smart_info = ask_gemini(title)
-                
-                if "跳過" not in smart_info:
-                    msg = f"🔍 **【挖掘到未來三個月行程】**\n✅ {smart_info.strip()}\n🔗 來源：{link}"
-                    requests.post(discord_webhook_url, json={"content": msg})
-                    found_any = True
+                info = ask_gemini(title, item.link.text)
+                if info and "藝人：" in info:
+                    message = f"🔥 **【挖到重點情報】**\n{info}\n🔗 來源：{item.link.text}"
+                    requests.post(discord_webhook_url, json={"content": message})
+                    processed_titles.add(title)
         except:
             continue
-            
-    if not found_any:
-        # 如果還是沒抓到，我們傳送一個 Debug 訊息，讓你確認程式有在跑
-        requests.post(discord_webhook_url, json={"content": "🤖 雷達掃描完畢，目前網路上尚未更新符合名單的新活動資訊。"})
 
 if __name__ == "__main__":
-    fetch_future_kpop()
+    fetch_kpop()
