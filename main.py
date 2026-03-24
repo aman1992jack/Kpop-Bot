@@ -8,8 +8,7 @@ def ask_gemini_safe(prompt_text):
     if not gemini_key:
         return "🛑 嚴重錯誤：找不到 Gemini API Key！"
 
-    # 改回確定找得到的 flash 模型，並保留「解除安全封鎖」的強大設定！
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
     payload = {
         "contents": [{"parts": [{"text": prompt_text}]}],
         "safetySettings": [
