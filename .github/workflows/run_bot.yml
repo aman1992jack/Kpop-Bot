@@ -1,8 +1,10 @@
 name: KPOP Bot Daily Run
+
 on:
   schedule:
     - cron: '0 3,15 * * *'
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,6 +20,4 @@ jobs:
       - name: Run bot
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
         run: python main.py
