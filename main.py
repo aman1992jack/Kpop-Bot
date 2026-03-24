@@ -1,31 +1,26 @@
 import requests
 import os
 import xml.etree.ElementTree as ET
+import time
 from urllib.parse import quote
 
 print("🚀 程式開始執行...")
 
 discord_webhook_url = os.getenv("DISCORD_WEBHOOK")
 if not discord_webhook_url:
-    print("❌ 致命錯誤：找不到 DISCORD_WEBHOOK！請檢查 GitHub Secrets 是否有設定對。")
+    print("❌ 致命錯誤：找不到 DISCORD_WEBHOOK！")
     exit(1)
-else:
-    print("✅ 成功讀取 Discord 鑰匙")
 
 def fetch_and_send():
     query = "KPOP 台灣 (開賣 OR 聯名 OR 簽售 OR 演唱會)"
     rss_url = f"https://news.google.com/rss/search?q={quote(query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
     
-    print(f"🔍 準備抓取新聞...")
     try:
         res = requests.get(rss_url, timeout=10)
-        print(f"📡 Google News 連線狀態碼: {res.status_code} (200代表成功)")
-        
         root = ET.fromstring(res.text)
         items = root.findall('.//item')[:10]
-        print(f"🗞️ 成功抓到 {len(items)} 則新聞，開始過濾關鍵字...")
         
-        report = "📢 **【K-POP 台灣最新情報推播 (大聲除錯版)】**\n\n"
+        report = "📢 **【K-POP 台灣最新情報推播 (直連滿血版)】**\n\n"
         has_news = False
         
         for item in items:
@@ -41,13 +36,16 @@ def fetch_and_send():
             
         print(f"📝 準備發送至 Discord，總字數為：{len(report)}")
         
-        # 發送 Discord
-        discord_res = requests.post(discord_webhook_url, json={"content": report})
-        print(f"📨 Discord 回傳狀態碼: {discord_res.status_code} (204代表成功發送)")
-        print(f"📨 Discord 官方回覆內容: {discord_res.text}")
-        
+        # 關鍵修復：分段發送邏輯 (每次最多傳 1800 字)
+        chunk_size = 1800
+        for i in range(0, len(report), chunk_size):
+            chunk = report[i:i+chunk_size]
+            discord_res = requests.post(discord_webhook_url, json={"content": chunk})
+            print(f"📨 第 {i//chunk_size + 1} 段發送狀態: {discord_res.status_code}")
+            time.sleep(1) # 暫停 1 秒避免被 Discord 鎖定
+            
     except Exception as e:
-        print(f"💥 發生嚴重錯誤：{str(e)}")
+        print(f"💥 發生錯誤：{str(e)}")
 
 if __name__ == "__main__":
     fetch_and_send()
