@@ -4,34 +4,42 @@ import os
 discord_webhook_url = os.getenv("DISCORD_WEBHOOK")
 gemini_key = os.getenv("GEMINI_API_KEY")
 
-def ask_gemini_to_report():
-    prompt = """
-    你現在是台灣 K-POP 專業情報主編。請針對 2026 年 3 月至 6 月在台灣的活動提供報表。
-    
-    已知重要資訊：
-    1. ITZY 高雄場 (6/27)：3/24星展預售、3/25會員預售、3/26正式開賣。
-    2. CNBLUE 高雄場 (6/13)：3/26 12:00 年代售票開賣。
-    
-    請以『藝人 | 活動 | 售票日期 | 地點』的格式整理。
-    """
-    
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
+def ask_gemini_safe(prompt_text):
+    # 更換成更穩定的 Pro 模型，並放寬安全設定
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={gemini_key}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt_text}]}],
+        "safetySettings": [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+        ]
+    }
     try:
-        response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=20)
+        response = requests.post(url, json=payload, timeout=30)
         res_json = response.json()
-        
-        # 修正點：檢查是否有回傳結果，避免 'candidates' 報錯
-        if 'candidates' in res_json and len(res_json['candidates']) > 0:
+        # 增加多層檢查，防止 candidates 消失
+        if 'candidates' in res_json:
             return res_json['candidates'][0]['content']['parts'][0]['text']
+        elif 'promptFeedback' in res_json:
+            return f"內容被 Google 屏蔽，原因：{res_json['promptFeedback']}"
         else:
-            return "⚠️ AI 暫時無法生成內容，請稍後再試。原因：API 回傳格式異常。"
+            return "無法解析回傳格式"
     except Exception as e:
-        return f"❌ 發生錯誤：{str(e)}"
+        return f"連線錯誤：{str(e)}"
 
 def run_daily_report():
-    report = ask_gemini_to_report()
-    data = {"content": f"📢 **【K-POP 台灣三個月情報雷達】**\n\n{report}"}
-    requests.post(discord_webhook_url, json=data)
+    # 這裡我們直接提供事實，讓 AI 做排版就好
+    info_text = """
+    請幫我整理 2026/03/24-06/30 台灣 KPOP 重點：
+    1. ITZY 高雄 6/27：3/24預售, 3/25預售, 3/26全面開賣。
+    2. CNBLUE 高雄 6/13：3/26 售票。
+    3. 子瑜 7-11 聯名：請查詢是否有最新開賣日。
+    請用 Markdown 列表格式輸出。
+    """
+    report = ask_gemini_safe(info_text)
+    requests.post(discord_webhook_url, json={"content": f"📢 **K-POP 深度情報 (PRO 模式)**\n\n{report}"})
 
 if __name__ == "__main__":
     run_daily_report()
