@@ -2,36 +2,39 @@ import requests
 import os
 
 discord_webhook_url = os.getenv("DISCORD_WEBHOOK")
-gemini_key = os.getenv("GEMINI_API_KEY")
+claude_key = os.getenv("CLAUDE_API_KEY")
 
-def ask_gemini_safe(prompt_text):
-    if not gemini_key:
-        return "🛑 嚴重錯誤：找不到 Gemini API Key！"
+def ask_claude(prompt_text):
+    if not claude_key:
+        return "🛑 嚴重錯誤：找不到 Claude API Key！"
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
+    url = "https://api.anthropic.com/v1/messages"
+    headers = {
+        "x-api-key": claude_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+    }
     payload = {
-        "contents": [{"parts": [{"text": prompt_text}]}],
-        "safetySettings": [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+        "model": "claude-haiku-4-5-20251001",
+        "max_tokens": 1024,
+        "messages": [
+            {"role": "user", "content": prompt_text}
         ]
     }
-    
+
     try:
-        response = requests.post(url, json=payload, timeout=30)
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
         res_json = response.json()
-        
-        if 'candidates' in res_json:
-            return res_json['candidates'][0]['content']['parts'][0]['text']
+
+        if 'content' in res_json:
+            return res_json['content'][0]['text']
         elif 'error' in res_json:
-            error_code = res_json['error'].get('code')
+            error_type = res_json['error'].get('type')
             error_msg = res_json['error'].get('message')
-            return f"❌ Google API 拒絕連線！\n錯誤代碼：{error_code}\n原因：{error_msg}"
+            return f"❌ Claude API 錯誤！\n類型：{error_type}\n原因：{error_msg}"
         else:
             return f"⚠️ 未知的回傳格式，原始資料：{res_json}"
-            
+
     except Exception as e:
         return f"🌐 連線層級錯誤：{str(e)}"
 
@@ -42,8 +45,8 @@ def run_daily_report():
     2. CNBLUE 高雄 6/13：3/26 售票。
     請用 Markdown 列表格式輸出。
     """
-    report = ask_gemini_safe(info_text)
-    requests.post(discord_webhook_url, json={"content": f"📢 **K-POP 深度情報 (解除封印版)**\n\n{report}"})
+    report = ask_claude(info_text)
+    requests.post(discord_webhook_url, json={"content": f"📢 **K-POP 深度情報**\n\n{report}"})
 
 if __name__ == "__main__":
     run_daily_report()
