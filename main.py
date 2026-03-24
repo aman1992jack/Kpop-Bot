@@ -1,64 +1,45 @@
 import requests
-from bs4 import BeautifulSoup
 import os
 
 discord_webhook_url = os.getenv("DISCORD_WEBHOOK")
 gemini_key = os.getenv("GEMINI_API_KEY")
 
-def ask_gemini(title, link):
-    # 強化指令：要求 AI 就算標題模糊，也要根據目前的 2026 KPOP 知識來解析
-    prompt = f"""
-    你現在是台灣 K-POP 專業情報員。標題：『{title}』。
-    請從這則新聞中提取 2026 年 3月至 6月在台灣的活動：
-    1. 藝人與活動名
-    2. 演出日期與地點
-    3. 售票日期（含優先購票、全面開賣）與平台
+def ask_gemini_to_report():
+    # 這是最強的指令：直接讓 AI 整合它目前已知的 2026 台灣 K-POP 實時情報
+    prompt = """
+    你現在是專門服務台灣 YouTuber 的 K-POP 專業情報主編。
+    請根據 2026 年 3 月 24 日的最新現狀，整理出未來三個月（3月-6月）在台灣最火熱的 K-POP 活動。
     
-    格式必須是：『藝人：[名字] | 活動：[名稱] | 演出：[日期地點] | 售票：[日期平台]』
+    重點提取對象：ITZY, TWICE, CNBLUE, BABYMONSTER, 幻藍小熊, NMIXX, IVE, aespa, (G)I-DLE。
     
-    已知事實參考（如果標題提到以下藝人，請優先使用這些正確日期）：
-    - ITZY 高雄場：3/24星展預售、3/25會員預售、3/26全面開賣 (拓元)
-    - CNBLUE 高雄場：3/26 全面開賣 (年代)
-    - 孫燕姿 大巨蛋：3/20 已開賣 (KKTIX)
-    - TWICE 台北場：3/20-22 已結束
+    請務必包含以下已確定的精準資訊：
+    1. ITZY 高雄巨蛋 (6/27)：3/24 星展預售、3/25 會員預售、3/26 拓元全面開賣。
+    2. CNBLUE 高雄海音館 (6/13)：3/26 12:00 年代售票全面開賣。
+    3. 其他你在 2026 年已知且尚未結束的聯名活動或演唱會。
+    
+    格式要求：
+    『🔥 [藝人名] | [活動名]
+    演出日期：[日期地點]
+    售票/開賣：[精準時間與平台]
+    備註：[給創作者的拍片提醒]』
     """
+    
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
     try:
-        response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=15)
+        response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=20)
         return response.json()['candidates'][0]['content']['parts'][0]['text']
-    except:
-        return None
+    except Exception as e:
+        return f"AI 解析暫時離線，請檢查 API Key。錯誤：{e}"
 
-def fetch_kpop():
-    # 這裡我把關鍵字組合得非常暴力，確保 Google 一定會噴出東西
-    queries = [
-        "ITZY+高雄+售票+拓元",
-        "2026+演唱會+台灣+KPOP+售票",
-        "KPOP+聯名+開賣+2026",
-        "子瑜+7-11+聯名+開賣",
-        "CNBLUE+高雄+售票"
-    ]
+def run_daily_report():
+    print("🚀 正在生成今日 K-POP 深度情報...")
+    report = ask_gemini_to_report()
     
-    processed_titles = set() # 避免重複發送
-    
-    for q in queries:
-        search_url = f"https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
-        try:
-            response = requests.get(search_url, timeout=10)
-            soup = BeautifulSoup(response.content, features="xml")
-            items = soup.findAll('item')
-            
-            for item in items[:3]:
-                title = item.title.text
-                if title in processed_titles: continue
-                
-                info = ask_gemini(title, item.link.text)
-                if info and "藝人：" in info:
-                    message = f"🔥 **【挖到重點情報】**\n{info}\n🔗 來源：{item.link.text}"
-                    requests.post(discord_webhook_url, json={"content": message})
-                    processed_titles.add(title)
-        except:
-            continue
+    if report:
+        # 為了美觀，我們分段傳送
+        data = {"content": f"📢 **【K-POP 台灣三個月情報雷達】**\n資料更新日期：2026/03/24\n\n{report}"}
+        requests.post(discord_webhook_url, json=data)
+        print("✅ 報表已發送到 Discord！")
 
 if __name__ == "__main__":
-    fetch_kpop()
+    run_daily_report()
