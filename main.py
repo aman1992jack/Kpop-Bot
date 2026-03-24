@@ -5,41 +5,33 @@ discord_webhook_url = os.getenv("DISCORD_WEBHOOK")
 gemini_key = os.getenv("GEMINI_API_KEY")
 
 def ask_gemini_to_report():
-    # 這是最強的指令：直接讓 AI 整合它目前已知的 2026 台灣 K-POP 實時情報
     prompt = """
-    你現在是專門服務台灣 YouTuber 的 K-POP 專業情報主編。
-    請根據 2026 年 3 月 24 日的最新現狀，整理出未來三個月（3月-6月）在台灣最火熱的 K-POP 活動。
+    你現在是台灣 K-POP 專業情報主編。請針對 2026 年 3 月至 6 月在台灣的活動提供報表。
     
-    重點提取對象：ITZY, TWICE, CNBLUE, BABYMONSTER, 幻藍小熊, NMIXX, IVE, aespa, (G)I-DLE。
+    已知重要資訊：
+    1. ITZY 高雄場 (6/27)：3/24星展預售、3/25會員預售、3/26正式開賣。
+    2. CNBLUE 高雄場 (6/13)：3/26 12:00 年代售票開賣。
     
-    請務必包含以下已確定的精準資訊：
-    1. ITZY 高雄巨蛋 (6/27)：3/24 星展預售、3/25 會員預售、3/26 拓元全面開賣。
-    2. CNBLUE 高雄海音館 (6/13)：3/26 12:00 年代售票全面開賣。
-    3. 其他你在 2026 年已知且尚未結束的聯名活動或演唱會。
-    
-    格式要求：
-    『🔥 [藝人名] | [活動名]
-    演出日期：[日期地點]
-    售票/開賣：[精準時間與平台]
-    備註：[給創作者的拍片提醒]』
+    請以『藝人 | 活動 | 售票日期 | 地點』的格式整理。
     """
     
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
     try:
         response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=20)
-        return response.json()['candidates'][0]['content']['parts'][0]['text']
+        res_json = response.json()
+        
+        # 修正點：檢查是否有回傳結果，避免 'candidates' 報錯
+        if 'candidates' in res_json and len(res_json['candidates']) > 0:
+            return res_json['candidates'][0]['content']['parts'][0]['text']
+        else:
+            return "⚠️ AI 暫時無法生成內容，請稍後再試。原因：API 回傳格式異常。"
     except Exception as e:
-        return f"AI 解析暫時離線，請檢查 API Key。錯誤：{e}"
+        return f"❌ 發生錯誤：{str(e)}"
 
 def run_daily_report():
-    print("🚀 正在生成今日 K-POP 深度情報...")
     report = ask_gemini_to_report()
-    
-    if report:
-        # 為了美觀，我們分段傳送
-        data = {"content": f"📢 **【K-POP 台灣三個月情報雷達】**\n資料更新日期：2026/03/24\n\n{report}"}
-        requests.post(discord_webhook_url, json=data)
-        print("✅ 報表已發送到 Discord！")
+    data = {"content": f"📢 **【K-POP 台灣三個月情報雷達】**\n\n{report}"}
+    requests.post(discord_webhook_url, json=data)
 
 if __name__ == "__main__":
     run_daily_report()
