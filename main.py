@@ -22,21 +22,20 @@ def fetch_and_send():
         send_to_discord("🛑 錯誤：找不到 GEMINI_API_KEY")
         return
 
-    # 👑 【終極分流雷達：避免網址過長崩潰，分成三批次抓取】
+    # 【分流雷達設定】
     locations = '(台灣 OR 台北 OR 高雄 OR 桃園 OR 台南 OR 林口)'
     events = '(演唱會 OR 售票 OR 搶票 OR 見面會 OR 聯名 OR 快閃 OR 簽售 OR 品牌 OR 代言)'
 
-    # 第一批：大勢女團 & 新生代
     q1 = '"TWICE" OR "ITZY" OR "BABYMONSTER" OR "aespa" OR "LE SSERAFIM" OR "NMIXX" OR "BLACKPINK" OR "NewJeans" OR "IVE" OR "I-DLE" OR "QWER" OR "ILLIT" OR "MEOVV"'
-    
-    # 第二批：男團 & 經典團體 & 特殊企劃
     q2 = '"BTS" OR "SEVENTEEN" OR "Stray Kids" OR "TXT" OR "CRAVITY" OR "BIGBANG" OR "少女時代" OR "ALLDAY PROJECT" OR "CORTIS"'
-    
-    # 第三批：Solo 歌手 & 自帶流量成員 (含錯譯防護)
     q3 = '"IU" OR "泫雅" OR "太妍" OR "潤娥" OR "Yena" OR "GD" OR "T.O.P." OR "子瑜" OR "舒華" OR "薇娟" OR "美延" OR "Karina" OR "劉知珉" OR "Winter" OR "張員瑛" OR "Jennie" OR "Lisa" OR "Jisoo" OR "Rosé"'
 
     queries = [q1, q2, q3]
     all_news_dict = {}
+    
+    # 👑 新增：存放「代號」與「真實超長網址」的對應表
+    url_mapping = {} 
+    news_counter = 1
 
     for q in queries:
         full_query = f"({q}) {locations} {events}"
@@ -44,18 +43,24 @@ def fetch_and_send():
         try:
             res = requests.get(rss_url, timeout=15)
             root = ET.fromstring(res.text)
-            items = root.findall('.//item')[:15] # 每批抓 15 篇，總共最多撈 45 篇
+            items = root.findall('.//item')[:15] 
             for item in items:
                 title = item.find('title').text
                 link = item.find('link').text
                 pub_date = item.find('pubDate').text
-                # 使用新聞連結當作字典的 Key，可以完美過濾掉不同批次抓到的重複新聞
-                all_news_dict[link] = f"- [發布時間: {pub_date}] {title} (連結: {link})"
+                
+                # 利用新聞標題去重，避免同一篇新聞重複抓
+                if title not in all_news_dict:
+                    # 建立防呆代號，例如 [LINK_01]
+                    link_id = f"[LINK_{news_counter:02d}]"
+                    url_mapping[link_id] = link
+                    # 餵給 AI 的清單只會出現代號
+                    all_news_dict[title] = f"- [發布時間: {pub_date}] {title} (新聞代號: {link_id})"
+                    news_counter += 1
         except Exception as e:
             print(f"抓取批次發生錯誤: {e}")
             continue
             
-    # 將去重後的新聞組合成清單，最多餵給 AI 40 篇精華
     news_list = "\n".join(list(all_news_dict.values())[:40]) 
 
     if not news_list:
@@ -64,7 +69,7 @@ def fetch_and_send():
 
     today_str = datetime.now().strftime("%Y年%m月%d日")
 
-    # 【AI 深度去重與時間篩選】
+    # 【AI 深度過濾指令】
     prompt = f"""
     今天是 {today_str}。請作為一個資料處理程式，分析以下台灣新聞：
     {news_list}
@@ -79,17 +84,17 @@ def fetch_and_send():
     - 只能使用以下單一格式輸出：
     
     🔥 [藝人/團體] | [活動種類] | [演出/活動日期與地點] | 售票：[日期與時間]
-    🔗 [新聞連結]
+    🔗 [新聞代號]
     
-    如果經過篩選後，完全沒有未來 3 個月內的活動，請只輸出單行文字：「🤖 目前網路上無未來 3 個月內的最新 K-POP 活動情報。」
+    注意：連結部分請直接輸出「[新聞代號]」即可（例如 🔗 [LINK_01]），絕對不要輸出任何網址。
+    如果經過篩選後，沒有未來 3 個月內的活動，請只輸出：「🤖 目前網路上無未來 3 個月內的最新 K-POP 活動情報。」
     """
     
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    send_to_discord("⏳ 啟動終極分流雷達！已收集全明星陣容新聞，正在請 Gemini 2.5 Flash 撰寫深度情報...")
+    send_to_discord("⏳ 啟動防斷結雷達！正在請 Gemini 2.5 Flash 撰寫深度情報...")
     
-    # 死纏爛打機制
     max_retries = 5
     for attempt in range(max_retries):
         try:
@@ -97,7 +102,12 @@ def fetch_and_send():
             if api_res.status_code == 200:
                 res_json = api_res.json()
                 report = res_json['candidates'][0]['content']['parts'][0]['text']
-                send_to_discord(f"📢 **【K-POP 終極雷達 (全明星陣容版)】**\n\n{report}")
+                
+                # 👑 魔法還原：在發送前，把 [LINK_01] 替換回原本 100% 完整的超長網址
+                for link_id, real_url in url_mapping.items():
+                    report = report.replace(link_id, real_url)
+                    
+                send_to_discord(f"📢 **【K-POP 終極雷達 (防斷結完美版)】**\n\n{report}")
                 break
             elif api_res.status_code == 503:
                 send_to_discord(f"⚠️ Google 伺服器塞車中 (503)，機器人將在 20 秒後發動第 {attempt + 1} 次重試...")
