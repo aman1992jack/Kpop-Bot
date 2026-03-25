@@ -30,7 +30,7 @@ def fetch_and_send():
     try:
         res = requests.get(rss_url, timeout=10)
         root = ET.fromstring(res.text)
-        items = root.findall('.//item')[:3] # 為了測試，只抓前3則減少干擾
+        items = root.findall('.//item')[:5] # 抓前5則重點測試
         
         news_list = ""
         for item in items:
@@ -38,11 +38,14 @@ def fetch_and_send():
             news_list += f"- {title}\n"
 
         # 2. 準備呼叫 API
-        prompt = f"請測試連線。將以下新聞整理成『🔥 [藝人] | [活動]』的格式：\n{news_list}"
-        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
+        prompt = f"請將以下新聞整理成『🔥 [藝人] | [活動]』的格式：\n{news_list}"
+        
+        # 👑 關鍵修改：將大腦升級為 gemini-3.0-flash
+        # 如果你想測 2.5，就把 3.0 改成 2.5 即可
+        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key={gemini_key}"
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         
-        send_to_discord("⏳ 正在向 Google API 發送請求，請稍候...")
+        send_to_discord("⏳ 正在向 **Gemini 3.0 Flash** 發送請求，請稍候...")
         
         # 3. 發送請求並攔截所有資訊
         api_res = requests.post(api_url, json=payload, timeout=30)
@@ -51,25 +54,23 @@ def fetch_and_send():
         if api_res.status_code == 200:
             res_json = api_res.json()
             report = res_json['candidates'][0]['content']['parts'][0]['text']
-            send_to_discord(f"✅ **API 連線奇蹟成功！**\n\n{report}")
+            send_to_discord(f"✅ **API 連線奇蹟成功 (3.0 大腦)！**\n\n{report}")
         else:
             # 整理最詳細的報錯單
-            error_msg = f"❌ **API 拒絕連線 (深度診斷報告)**\n\n"
+            error_msg = f"❌ **API 拒絕連線 (3.0 診斷報告)**\n\n"
             error_msg += f"**1. HTTP 狀態碼:** `{api_res.status_code}`\n"
             
             try:
-                # 嘗試漂亮地印出 JSON
                 error_json = api_res.json()
                 formatted_error = json.dumps(error_json, indent=2, ensure_ascii=False)
                 error_msg += f"**2. 官方原始報錯內容:**\n```json\n{formatted_error}\n```"
             except:
-                # 如果連 JSON 都不是，直接印出純文字
                 error_msg += f"**2. 官方原始報錯內容:**\n```text\n{api_res.text}\n```"
                 
             send_to_discord(error_msg)
             
     except Exception as e:
-        send_to_discord(f"⚠️ 程式運行中斷 (非 API 問題)：{str(e)}")
+        send_to_discord(f"⚠️ 程式運行中斷：{str(e)}")
 
 if __name__ == "__main__":
     fetch_and_send()
