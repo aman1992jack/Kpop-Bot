@@ -23,7 +23,6 @@ def fetch_and_send():
         return
 
     # 【第一層升級：精準團名關鍵字打擊】
-    # 利用 OR 邏輯一次點名多組大勢團體，強迫 Google 挖出非主流雜誌的報導
     groups = '"TWICE" OR "ITZY" OR "BABYMONSTER" OR "aespa" OR "LE SSERAFIM" OR "NMIXX" OR "BLACKPINK" OR "NewJeans" OR "IVE" OR "(G)I-DLE" OR "BTS" OR "SEVENTEEN" OR "Stray Kids"'
     keywords = '台灣 (演唱會 OR 售票 OR 搶票 OR 見面會 OR 聯名 OR 快閃)'
     query = f"({groups}) {keywords}"
@@ -33,7 +32,6 @@ def fetch_and_send():
     try:
         res = requests.get(rss_url, timeout=15)
         root = ET.fromstring(res.text)
-        # 因為精準度提高了，我們可以稍微多抓幾篇給 AI 分析
         items = root.findall('.//item')[:25] 
         
         news_list = ""
@@ -68,16 +66,28 @@ def fetch_and_send():
         api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         
-        # 👑 給予充足的 90 秒思考時間，避免 503 或 timeout
-        api_res = requests.post(api_url, json=payload, timeout=90)
+        send_to_discord("⏳ 啟動無時間限制模式！正在請 Gemini 2.5 Flash 撰寫深度情報...")
         
-        if api_res.status_code == 200:
-            res_json = api_res.json()
-            report = res_json['candidates'][0]['content']['parts'][0]['text']
-            send_to_discord(f"📢 **【K-POP 點名雷達 (多維度雜誌與媒體版)】**\n\n{report}")
-        else:
-            send_to_discord(f"❌ **API 發生錯誤**: {api_res.status_code}")
+        # 👑 終極死纏爛打機制：如果 503 塞車，就自動重試
+        max_retries = 5
+        for attempt in range(max_retries):
+            # timeout=None 代表程式會無止盡地等下去，不再主動掛電話
+            api_res = requests.post(api_url, json=payload, timeout=None)
             
+            if api_res.status_code == 200:
+                res_json = api_res.json()
+                report = res_json['candidates'][0]['content']['parts'][0]['text']
+                send_to_discord(f"📢 **【K-POP 點名雷達 (無限制突圍版)】**\n\n{report}")
+                break # 成功就跳出迴圈，任務結束
+                
+            elif api_res.status_code == 503:
+                send_to_discord(f"⚠️ Google 伺服器塞車中 (503)，機器人將在 20 秒後發動第 {attempt + 1} 次重試...")
+                time.sleep(20) # 休息 20 秒再撞一次
+                
+            else:
+                send_to_discord(f"❌ **API 發生未預期錯誤**: {api_res.status_code}\n{api_res.text}")
+                break # 遇到其他死胡同錯誤，直接放棄
+                
     except Exception as e:
         send_to_discord(f"⚠️ 程式運行中斷：{str(e)}")
 
