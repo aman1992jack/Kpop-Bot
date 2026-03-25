@@ -22,74 +22,92 @@ def fetch_and_send():
         send_to_discord("🛑 錯誤：找不到 GEMINI_API_KEY")
         return
 
-    # 【第一層升級：精準團名關鍵字打擊】
-    groups = '"TWICE" OR "ITZY" OR "BABYMONSTER" OR "aespa" OR "LE SSERAFIM" OR "NMIXX" OR "BLACKPINK" OR "NewJeans" OR "IVE" OR "(G)I-DLE" OR "BTS" OR "SEVENTEEN" OR "Stray Kids"'
-    keywords = '台灣 (演唱會 OR 售票 OR 搶票 OR 見面會 OR 聯名 OR 快閃)'
-    query = f"({groups}) {keywords}"
-    
-    rss_url = f"https://news.google.com/rss/search?q={quote(query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
-    
-    try:
-        res = requests.get(rss_url, timeout=15)
-        root = ET.fromstring(res.text)
-        items = root.findall('.//item')[:25] 
-        
-        news_list = ""
-        for item in items:
-            title = item.find('title').text
-            link = item.find('link').text
-            pub_date = item.find('pubDate').text
-            news_list += f"- [發布時間: {pub_date}] {title} (連結: {link})\n"
+    # 👑 【終極分流雷達：避免網址過長崩潰，分成三批次抓取】
+    locations = '(台灣 OR 台北 OR 高雄 OR 桃園 OR 台南 OR 林口)'
+    events = '(演唱會 OR 售票 OR 搶票 OR 見面會 OR 聯名 OR 快閃 OR 簽售 OR 品牌 OR 代言)'
 
-        today_str = datetime.now().strftime("%Y年%m月%d日")
+    # 第一批：大勢女團 & 新生代
+    q1 = '"TWICE" OR "ITZY" OR "BABYMONSTER" OR "aespa" OR "LE SSERAFIM" OR "NMIXX" OR "BLACKPINK" OR "NewJeans" OR "IVE" OR "I-DLE" OR "QWER" OR "ILLIT" OR "MEOVV"'
+    
+    # 第二批：男團 & 經典團體 & 特殊企劃
+    q2 = '"BTS" OR "SEVENTEEN" OR "Stray Kids" OR "TXT" OR "CRAVITY" OR "BIGBANG" OR "少女時代" OR "ALLDAY PROJECT" OR "CORTIS"'
+    
+    # 第三批：Solo 歌手 & 自帶流量成員 (含錯譯防護)
+    q3 = '"IU" OR "泫雅" OR "太妍" OR "潤娥" OR "Yena" OR "GD" OR "T.O.P." OR "子瑜" OR "舒華" OR "薇娟" OR "美延" OR "Karina" OR "劉知珉" OR "Winter" OR "張員瑛" OR "Jennie" OR "Lisa" OR "Jisoo" OR "Rosé"'
 
-        # 【第二層與第三層：AI 深度去重與時間篩選】
-        prompt = f"""
-        今天是 {today_str}。請作為一個資料處理程式，分析以下台灣新聞：
-        {news_list}
-        
-        請嚴格執行以下三層過濾邏輯：
-        1. 去重與統整：新聞中可能有多家媒體報導同一個活動，請將相同活動的資訊合併，以資訊最完整的那篇為主，並附上該篇連結。
-        2. 時間篩選：嚴格剔除「已經發生過的活動」、「售票日已過」的活動。只留下未來 3 個月內即將售票或舉辦的活動。
-        3. 重點定義：包含演唱會、見面會、簽售會、以及速食店/超商等實體聯名或快閃活動。
-        
-        輸出規定（非常嚴格）：
-        - 絕對不要輸出任何問候語、廢話、免責聲明、或搶票提醒。
-        - 只能使用以下單一格式輸出：
-        
-        🔥 [藝人/團體] | [活動種類] | [演出/活動日期與地點] | 售票：[日期與時間]
-        🔗 [新聞連結]
-        
-        如果經過篩選後，完全沒有未來 3 個月內的活動，請只輸出單行文字：「🤖 目前網路上無未來 3 個月內的最新 K-POP 活動情報。」
-        """
-        
-        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
-        payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        
-        send_to_discord("⏳ 啟動無時間限制模式！正在請 Gemini 2.5 Flash 撰寫深度情報...")
-        
-        # 👑 終極死纏爛打機制：如果 503 塞車，就自動重試
-        max_retries = 5
-        for attempt in range(max_retries):
-            # timeout=None 代表程式會無止盡地等下去，不再主動掛電話
-            api_res = requests.post(api_url, json=payload, timeout=None)
+    queries = [q1, q2, q3]
+    all_news_dict = {}
+
+    for q in queries:
+        full_query = f"({q}) {locations} {events}"
+        rss_url = f"https://news.google.com/rss/search?q={quote(full_query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+        try:
+            res = requests.get(rss_url, timeout=15)
+            root = ET.fromstring(res.text)
+            items = root.findall('.//item')[:15] # 每批抓 15 篇，總共最多撈 45 篇
+            for item in items:
+                title = item.find('title').text
+                link = item.find('link').text
+                pub_date = item.find('pubDate').text
+                # 使用新聞連結當作字典的 Key，可以完美過濾掉不同批次抓到的重複新聞
+                all_news_dict[link] = f"- [發布時間: {pub_date}] {title} (連結: {link})"
+        except Exception as e:
+            print(f"抓取批次發生錯誤: {e}")
+            continue
             
+    # 將去重後的新聞組合成清單，最多餵給 AI 40 篇精華
+    news_list = "\n".join(list(all_news_dict.values())[:40]) 
+
+    if not news_list:
+        send_to_discord("🤖 爬蟲回報：目前各大平台均無相關新聞。")
+        return
+
+    today_str = datetime.now().strftime("%Y年%m月%d日")
+
+    # 【AI 深度去重與時間篩選】
+    prompt = f"""
+    今天是 {today_str}。請作為一個資料處理程式，分析以下台灣新聞：
+    {news_list}
+    
+    請嚴格執行以下三層過濾邏輯：
+    1. 去重與統整：新聞中可能有多家媒體報導同一個活動，請將相同活動的資訊合併，以資訊最完整的那篇為主。
+    2. 時間篩選：嚴格剔除「已經發生過的活動」、「售票日已過」的活動。只留下未來 3 個月內即將售票或舉辦的活動。
+    3. 重點定義：包含演唱會、見面會、簽售會、品牌代言活動、以及速食店/超商等實體聯名或快閃活動。
+    
+    輸出規定（非常嚴格）：
+    - 絕對不要輸出任何問候語、廢話、免責聲明、或搶票提醒。
+    - 只能使用以下單一格式輸出：
+    
+    🔥 [藝人/團體] | [活動種類] | [演出/活動日期與地點] | 售票：[日期與時間]
+    🔗 [新聞連結]
+    
+    如果經過篩選後，完全沒有未來 3 個月內的活動，請只輸出單行文字：「🤖 目前網路上無未來 3 個月內的最新 K-POP 活動情報。」
+    """
+    
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    
+    send_to_discord("⏳ 啟動終極分流雷達！已收集全明星陣容新聞，正在請 Gemini 2.5 Flash 撰寫深度情報...")
+    
+    # 死纏爛打機制
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            api_res = requests.post(api_url, json=payload, timeout=None)
             if api_res.status_code == 200:
                 res_json = api_res.json()
                 report = res_json['candidates'][0]['content']['parts'][0]['text']
-                send_to_discord(f"📢 **【K-POP 點名雷達 (無限制突圍版)】**\n\n{report}")
-                break # 成功就跳出迴圈，任務結束
-                
+                send_to_discord(f"📢 **【K-POP 終極雷達 (全明星陣容版)】**\n\n{report}")
+                break
             elif api_res.status_code == 503:
                 send_to_discord(f"⚠️ Google 伺服器塞車中 (503)，機器人將在 20 秒後發動第 {attempt + 1} 次重試...")
-                time.sleep(20) # 休息 20 秒再撞一次
-                
+                time.sleep(20)
             else:
                 send_to_discord(f"❌ **API 發生未預期錯誤**: {api_res.status_code}\n{api_res.text}")
-                break # 遇到其他死胡同錯誤，直接放棄
-                
-    except Exception as e:
-        send_to_discord(f"⚠️ 程式運行中斷：{str(e)}")
+                break
+        except Exception as e:
+            send_to_discord(f"❌ **呼叫 AI 發生錯誤**: {str(e)}")
+            break
 
 if __name__ == "__main__":
     fetch_and_send()
