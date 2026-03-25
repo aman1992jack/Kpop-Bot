@@ -22,15 +22,14 @@ def fetch_and_send():
         send_to_discord("🛑 錯誤：找不到 GEMINI_API_KEY")
         return
 
-    # 【第一層：放寬關鍵字，廣泛收集各大媒體被 Google 收錄的新聞】
-    # 改用更符合台灣媒體習慣的字眼
+    # 【第一層：廣泛收集 20 則新聞】
     query = "(韓團 OR 韓國女團 OR 韓國男團 OR 韓國藝人 OR KPOP) 台灣 (演唱會 OR 售票 OR 搶票 OR 見面會 OR 聯名)"
     rss_url = f"https://news.google.com/rss/search?q={quote(query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
     
     try:
-        res = requests.get(rss_url, timeout=10)
+        res = requests.get(rss_url, timeout=15)
         root = ET.fromstring(res.text)
-        items = root.findall('.//item')[:20] # 一次抓 20 則，提供足夠的樣本給 AI 進行第二層去重
+        items = root.findall('.//item')[:20] 
         
         news_list = ""
         for item in items:
@@ -41,13 +40,13 @@ def fetch_and_send():
 
         today_str = datetime.now().strftime("%Y年%m月%d日")
 
-        # 【第二層與第三層：交給 AI 進行去重與精準過濾】
+        # 【第二層與第三層：AI 深度整理】
         prompt = f"""
         今天是 {today_str}。請作為一個資料處理程式，分析以下 20 則台灣新聞：
         {news_list}
         
         請嚴格執行以下三層過濾邏輯：
-        1. 去重與統整：新聞中可能有多家媒體報導同一個活動（例如好幾篇都在寫 ITZY），請將相同活動的資訊合併，以資訊最完整的那篇為主，並附上該篇連結。
+        1. 去重與統整：新聞中可能有多家媒體報導同一個活動，請將相同活動的資訊合併，以資訊最完整的那篇為主，並附上該篇連結。
         2. 時間篩選：嚴格剔除「已經發生過的活動」、「售票日已過」的活動。只留下未來 3 個月內即將售票或舉辦的活動。
         3. 重點定義：包含演唱會、見面會、簽售會、以及速食店/超商等實體聯名活動。
         
@@ -64,7 +63,8 @@ def fetch_and_send():
         api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         
-        api_res = requests.post(api_url, json=payload, timeout=30)
+        # 👑 關鍵修復：將 timeout 從 30 秒大幅放寬到 90 秒
+        api_res = requests.post(api_url, json=payload, timeout=90)
         
         if api_res.status_code == 200:
             res_json = api_res.json()
