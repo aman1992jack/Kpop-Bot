@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 from urllib.parse import quote
 import time
 from datetime import datetime
+from playwright.sync_api import sync_playwright
 
 discord_webhook_url = os.getenv("DISCORD_WEBHOOK")
 gemini_key = os.getenv("GEMINI_API_KEY")
@@ -17,13 +18,49 @@ def send_to_discord(text):
         requests.post(discord_webhook_url, json={"content": text[i:i+chunk_size]})
         time.sleep(1)
 
+def test_playwright_social():
+    report = "🕸️ **【社群平台 Playwright 抓取測試】**\n\n"
+    try:
+        with sync_playwright() as p:
+            # 啟動隱形 Chrome 瀏覽器
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            
+            # 1. 測試 Weverse
+            report += "🔍 **目標：Weverse (BABYMONSTER)**\n"
+            try:
+                page.goto("https://weverse.io/babymonster/notice/34440", timeout=15000)
+                # 使用朋友建議的 wait_for_selector
+                page.wait_for_selector(".container, .data-container, table tbody tr, .loading-spinner", timeout=10000)
+                time.sleep(2) # 額外給 2 秒緩衝讓文字完全渲染
+                text = page.locator("body").inner_text()
+                report += f"✅ 成功！預覽：`{text[:150].replace('\n', ' ')}...`\n\n"
+            except Exception as e:
+                report += f"❌ 失敗：{str(e)}\n\n"
+                
+            # 2. 測試 Threads
+            report += "🔍 **目標：Threads**\n"
+            try:
+                page.goto("https://www.threads.net/", timeout=15000)
+                page.wait_for_selector("._ammd, ._aqff, .system-fonts--body, .segoe", timeout=10000)
+                time.sleep(2)
+                text = page.locator("body").inner_text()
+                report += f"✅ 成功！預覽：`{text[:150].replace('\n', ' ')}...`\n\n"
+            except Exception as e:
+                report += f"❌ 失敗：{str(e)}\n\n"
+                
+            browser.close()
+    except Exception as e:
+        report += f"⚠️ Playwright 啟動失敗：{str(e)}\n"
+        
+    return report
+
 def fetch_and_send():
     if not gemini_key:
         send_to_discord("🛑 錯誤：找不到 GEMINI_API_KEY")
         return
 
-    # 【分流雷達設定】加入影視跨界關鍵字
-    locations = '(台灣 OR 台北 OR 高雄 OR 桃園 OR 台南 OR 林口)'
+    # 【分流雷達設定：拔除地點限制，徹底解放】
     events = '(演唱會 OR 售票 OR 搶票 OR 見面會 OR 聯名 OR 快閃 OR 簽售 OR 品牌 OR 代言 OR 電影 OR 戲劇 OR 出演 OR 影集)'
 
     q1 = '"TWICE" OR "ITZY" OR "BABYMONSTER" OR "aespa" OR "LE SSERAFIM" OR "NMIXX" OR "BLACKPINK" OR "NewJeans" OR "IVE" OR "I-DLE" OR "QWER" OR "ILLIT" OR "MEOVV"'
@@ -36,12 +73,12 @@ def fetch_and_send():
     news_counter = 1
 
     for q in queries:
-        full_query = f"({q}) {locations} {events}"
+        full_query = f"({q}) {events}" # 拿掉 locations 變數
         rss_url = f"https://news.google.com/rss/search?q={quote(full_query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
         try:
             res = requests.get(rss_url, timeout=15)
             root = ET.fromstring(res.text)
-            items = root.findall('.//item')[:15] 
+            items = root.findall('.//item')[:30] # 購物車加大
             for item in items:
                 title = item.find('title').text
                 link = item.find('link').text
@@ -53,41 +90,33 @@ def fetch_and_send():
                     all_news_dict[title] = f"- [發布時間: {pub_date}] {title} (新聞代號: {link_id})"
                     news_counter += 1
         except Exception as e:
-            print(f"抓取批次發生錯誤: {e}")
             continue
             
-    news_list = "\n".join(list(all_news_dict.values())[:40]) 
-
-    if not news_list:
-        send_to_discord("🤖 爬蟲回報：目前各大平台均無相關新聞。")
-        return
+    news_list = "\n".join(list(all_news_dict.values())[:80]) # 餵給 AI 的資料上限提高
 
     today_str = datetime.now().strftime("%Y年%m月%d日")
 
     prompt = f"""
-    今天是 {today_str}。請作為一個資料處理程式，分析以下台灣新聞：
+    今天是 {today_str}。請分析以下台灣新聞：
     {news_list}
     
-    請嚴格執行以下三層過濾邏輯：
-    1. 去重與統整：新聞中可能有多家媒體報導同一個活動，請將相同活動的資訊合併，以資訊最完整的那篇為主。
-    2. 時間篩選：嚴格剔除「已經發生過的實體活動」、「售票日已過」的活動。只留下未來 3 個月內即將售票、舉辦的活動，或「近期即將上映/播出的影視作品」。
-    3. 重點定義：包含演唱會、見面會、簽售會、品牌代言活動、實體聯名/快閃活動、以及「參演電影/戲劇/節目」等影視跨界消息。
+    1. 去重統整：合併相同活動。
+    2. 時間篩選：留下未來 3 個月內即將售票、舉辦的活動，或「近期上映的影視作品」。
+    3. 重點定義：演唱會、見面會、簽售會、代言、實體聯名/快閃，以及「參演電影/戲劇/節目」。
     
-    輸出規定（非常嚴格）：
-    - 絕對不要輸出任何問候語、廢話、免責聲明、或搶票提醒。
-    - 只能使用以下單一格式輸出：
-    
-    🔥 [藝人/團體] | [活動或影視種類] | [日期與地點/上映平台] | 售票/備註：[相關資訊]
+    輸出規定：
+    - 不要有廢話或問候語。
+    - 格式：🔥 [藝人/團體] | [活動或影視種類] | [日期與地點/上映平台] | 售票/備註：[資訊]
     🔗 [新聞代號]
-    
-    注意：連結部分請直接輸出「[新聞代號]」即可（例如 🔗 [LINK_01]），絕對不要輸出任何網址。
-    如果經過篩選後沒有任何情報，請只輸出：「🤖 目前網路上無未來 3 個月內的最新 K-POP 活動情報。」
     """
     
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    send_to_discord("⏳ 啟動影視跨界擴充雷達！正在請 Gemini 2.5 Flash 撰寫深度情報...")
+    send_to_discord("⏳ 雷達啟動！正在收集新聞與測試社群平台...")
+    
+    # 執行 Playwright 測試並加入報告
+    social_report = test_playwright_social()
     
     max_retries = 5
     for attempt in range(max_retries):
@@ -100,16 +129,17 @@ def fetch_and_send():
                 for link_id, real_url in url_mapping.items():
                     report = report.replace(link_id, real_url)
                     
-                send_to_discord(f"📢 **【K-POP 終極雷達 (影視擴充版)】**\n\n{report}")
+                # 將新聞 AI 整理結果與 Playwright 測試結果一起發送
+                final_msg = f"📢 **【K-POP 終極雷達】**\n\n{report}\n\n---\n\n{social_report}"
+                send_to_discord(final_msg)
                 break
             elif api_res.status_code == 503:
-                send_to_discord(f"⚠️ Google 伺服器塞車中 (503)，機器人將在 20 秒後發動第 {attempt + 1} 次重試...")
                 time.sleep(20)
             else:
-                send_to_discord(f"❌ **API 發生未預期錯誤**: {api_res.status_code}\n{api_res.text}")
+                send_to_discord(f"❌ **API 錯誤**: {api_res.status_code}")
                 break
         except Exception as e:
-            send_to_discord(f"❌ **呼叫 AI 發生錯誤**: {str(e)}")
+            send_to_discord(f"❌ **錯誤**: {str(e)}")
             break
 
 if __name__ == "__main__":
