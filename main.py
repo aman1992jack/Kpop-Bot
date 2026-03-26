@@ -42,7 +42,6 @@ def fetch_and_send():
 
     q1 = '"TWICE" OR "ITZY" OR "BABYMONSTER" OR "aespa" OR "LE SSERAFIM" OR "NMIXX" OR "BLACKPINK" OR "NewJeans" OR "IVE" OR "I-DLE" OR "QWER" OR "ILLIT" OR "MEOVV" OR "幻藍小熊" OR "GENBLUE"'
     q2 = '"BTS" OR "SEVENTEEN" OR "Stray Kids" OR "TXT" OR "CRAVITY" OR "BIGBANG" OR "少女時代" OR "ALLDAY PROJECT" OR "CORTIS"'
-    # 👑 補上 Yena 的中文譯名，確保萬無一失
     q3 = '"IU" OR "泫雅" OR "太妍" OR "潤娥" OR "Yena" OR "崔叡娜" OR "叡娜" OR "GD" OR "T.O.P." OR "子瑜" OR "舒華" OR "薇娟" OR "美延" OR "Karina" OR "劉知珉" OR "Winter" OR "張員瑛" OR "Jennie" OR "Lisa" OR "Jisoo" OR "Rosé"'
 
     queries = [q1, q2, q3]
@@ -56,7 +55,8 @@ def fetch_and_send():
         try:
             res = requests.get(rss_url, timeout=15)
             root = ET.fromstring(res.text)
-            items = root.findall('.//item')[:50] 
+            # 👑 擴大搜索面：從 50 條提升到 100 條，絕不放過任何角落！
+            items = root.findall('.//item')[:100] 
             for item in items:
                 title = item.find('title').text
                 link = item.find('link').text
@@ -82,20 +82,19 @@ def fetch_and_send():
     report_type = "早報" if tw_time.hour < 15 else "晚報"
     header_title = f"【K-POP 終極雷達 - {short_date} {report_type}】"
 
-    # 👑 植入 3 天法則，打造最適合自媒體的情報篩選
     prompt = f"""
     今天是台灣時間 {today_str}。請作為嚴格的 K-POP 情報分析師，分析以下新聞清單：
     {news_list}
     
-    請嚴格執行以下 SOP，若不符合請【直接剔除】，寧缺勿濫：
+    請嚴格執行以下 4 大鐵則，若不符合請【直接剔除】，寧缺勿濫：
     
-    1. 【只留核心情報】：只抓取「台灣實體活動」、「全球性音樂回歸/新專輯」、「影視大銀幕出演」、「品牌代言」。
-    2. 【地域絕對限制】：實體演唱會/見面會【僅限台灣】。海外演唱會直接刪除！
-    3. 【無情剔除黑名單】：絕對不要財經分析(營收/股價)、炎上爭議、八卦緋聞、機場穿搭。
-    4. 【📅 動態時間與 3 天法則過濾】(極度重要)：
-       - 單次性活動：舉辦日期「已過」，直接剔除。
-       - 持續性活動：新聞若提到明確截止日，且今天已過期，直接剔除。
-       - 👑 無日期特例：若新聞是「確定參演電影/戲劇」或「未定檔的代言」，請檢查該則新聞的 [發布時間]。若發布時間距離今天 ({today_str}) 在 3 天以內，請【務必保留】；若超過 3 天則視為無熱度的舊聞，直接剔除！
+    1. 【強制去重 (唯一化)】：同一個活動（例如 IVE 台北演唱會），不管清單裡有幾篇報導，【強制合併成唯一 1 筆】！挑選資訊最齊全的一篇作為代表連結。絕對不准出現重複的活動！
+    2. 【擊殺懶人包】：看到標題含有「懶人包、總整理、盤點、全攻略」的統整性新聞，請【直接刪除】！我們只需要獨立情報，不需要空泛的盤點。
+    3. 【地域與時間雙重過濾】：
+       - 實體活動（演唱會/見面會/快閃）：【僅限台灣】。海外一律刪除。
+       - 絕對不要財經分析(營收/股價)、炎上爭議、八卦緋聞、機場穿搭。
+       - 單次活動若日期「已過」，或聯名活動「已過期」，直接刪除。
+    4. 【無日期特例 (3天法則)】：若是「影視大銀幕出演」、「品牌代言」或「音樂回歸」，只要該新聞的 [發布時間] 在 3 天內（{today_str} 往前推 3 天），【無視舉辦日期，強制保留】！
     
     輸出規定：
     - 絕對不要有任何廢話或開場白。
@@ -115,12 +114,13 @@ def fetch_and_send():
         ]
     }
     
-    send_to_discord(f"⏳ 啟動 {report_type} 彙整！正在套用「3 天保鮮法則」篩選情報...")
+    send_to_discord(f"⏳ 啟動 {report_type} 深度掃描！搜索範圍擴大至 300 篇，正在進行 5 分鐘精準去重過濾...")
     
     max_retries = 5
     for attempt in range(max_retries):
         try:
-            api_res = requests.post(api_url, json=payload, timeout=180)
+            # 👑 思考時間大升級：給予 AI 5分鐘 (300 秒) 處理龐大資料！
+            api_res = requests.post(api_url, json=payload, timeout=300)
             if api_res.status_code == 200:
                 res_json = api_res.json()
                 candidate = res_json.get('candidates', [{}])[0]
