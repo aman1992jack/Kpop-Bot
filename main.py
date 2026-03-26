@@ -14,7 +14,6 @@ def send_to_discord(text):
         print("找不到 Discord Webhook")
         return
     
-    # 👑 終極切割法：按「換行」切割，絕對不切斷超長網址
     lines = text.split('\n')
     current_msg = ""
     
@@ -41,25 +40,25 @@ def check_weverse():
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            )
+            page = context.new_page()
             
             for group, url in weverse_targets.items():
                 try:
-                    page.goto(url, timeout=20000)
-                    # 👑 精準打擊：只等候「公告連結」出現
-                    page.wait_for_selector("a[href*='/notice/']", timeout=10000)
-                    time.sleep(2)
+                    page.goto(url, timeout=30000)
+                    page.wait_for_selector("a[href*='/notice/']", timeout=15000)
+                    time.sleep(3) 
                     
-                    # 只抓取公告標題的文字，無視其他選單
                     notice_links = page.locator("a[href*='/notice/']").all_inner_texts()
                     if notice_links:
-                        # 將前幾個公告標題串起來，清理換行
                         clean_text = " | ".join([t.strip() for t in notice_links if t.strip()])[:200].replace('\n', '')
                         report += f"🔹 **{group}**: `{clean_text}...`\n\n"
                     else:
                         report += f"🔹 **{group}**: 目前無最新公告\n\n"
                 except Exception as e:
-                    report += f"❌ **{group}**: 抓取超時\n\n"
+                    report += f"❌ **{group}**: 抓取超時或遭阻擋\n\n"
                     
             browser.close()
     except Exception as e:
@@ -74,7 +73,6 @@ def fetch_and_send():
 
     events = '(演唱會 OR 售票 OR 搶票 OR 見面會 OR 聯名 OR 快閃 OR 簽售 OR 品牌 OR 代言 OR 電影 OR 戲劇 OR 出演 OR 影集)'
 
-    # 👑 新增幻藍小熊 (GENBLUE) 與擴充名單
     q1 = '"TWICE" OR "ITZY" OR "BABYMONSTER" OR "aespa" OR "LE SSERAFIM" OR "NMIXX" OR "BLACKPINK" OR "NewJeans" OR "IVE" OR "I-DLE" OR "QWER" OR "ILLIT" OR "MEOVV" OR "幻藍小熊" OR "GENBLUE"'
     q2 = '"BTS" OR "SEVENTEEN" OR "Stray Kids" OR "TXT" OR "CRAVITY" OR "BIGBANG" OR "少女時代" OR "ALLDAY PROJECT" OR "CORTIS"'
     q3 = '"IU" OR "泫雅" OR "太妍" OR "潤娥" OR "Yena" OR "GD" OR "T.O.P." OR "子瑜" OR "舒華" OR "薇娟" OR "美延" OR "Karina" OR "劉知珉" OR "Winter" OR "張員瑛" OR "Jennie" OR "Lisa" OR "Jisoo" OR "Rosé"'
@@ -85,12 +83,12 @@ def fetch_and_send():
     news_counter = 1
 
     for q in queries:
-        full_query = f"({q}) {events}" 
+        # 👑 第一道鎖：在搜尋字串後加上 when:1m，強制 Google 只給最近 1 個月的新聞
+        full_query = f"({q}) {events} when:1m" 
         rss_url = f"https://news.google.com/rss/search?q={quote(full_query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
         try:
             res = requests.get(rss_url, timeout=15)
             root = ET.fromstring(res.text)
-            # 👑 購物車大幅升級：每批抓 50 篇，總共可達 150 篇，避免小眾情報被擠掉
             items = root.findall('.//item')[:50] 
             for item in items:
                 title = item.find('title').text
@@ -105,29 +103,30 @@ def fetch_and_send():
         except Exception as e:
             continue
             
-    # 解除上限，把所有新聞都餵給大腦
     news_list = "\n".join(list(all_news_dict.values())) 
 
     today_str = datetime.now().strftime("%Y年%m月%d日")
 
+    # 👑 第二道鎖：在 AI 指令中明確區分「舉辦日期」與「發布時間」
     prompt = f"""
     今天是 {today_str}。請分析以下台灣新聞：
     {news_list}
     
+    請嚴格執行以下過濾邏輯：
     1. 去重統整：合併相同活動。
-    2. 時間篩選：留下未來 3 個月內即將售票、舉辦的活動，或「近期上映的影視作品」。
-    3. 重點定義：演唱會、見面會、簽售會、代言、實體聯名/快閃，以及「參演電影/戲劇/節目」。
+    2. 時間篩選：實體活動（演唱會/見面會）請留下未來 3 個月內的資訊。
+       ⚠️ 特例保護：若是「參演電影/戲劇/節目」或「品牌代言/聯名」的消息，【不受活動舉辦日期的限制】，但前提是該新聞的「發布時間」必須是近期！
     
     輸出規定：
     - 不要有廢話或問候語。
     - 格式：🔥 [藝人/團體] | [活動或影視種類] | [日期與地點/上映平台] | 售票/備註：[資訊]
-    - 🔗 每個活動【只能保留一個】最具代表性的新聞代號，請直接輸出代號（如：[LINK_01]），不要列出多個！
+    - 🔗 每個活動【只能保留一個】最具代表性的新聞代號，請直接輸出代號（如：[LINK_01]）。
     """
     
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    send_to_discord("⏳ 啟動終極淨化雷達！正在收集海量新聞與精準掃描 Weverse...")
+    send_to_discord("⏳ 啟動終極淨化保鮮雷達！正在收集海量新聞與精準掃描 Weverse...")
     
     weverse_report = check_weverse()
     
@@ -139,7 +138,6 @@ def fetch_and_send():
                 res_json = api_res.json()
                 report = res_json['candidates'][0]['content']['parts'][0]['text']
                 
-                # 👑 完美隱身術：利用 < > 包住超長網址，徹底關閉 Discord 預覽大圖
                 for link_id, real_url in url_mapping.items():
                     report = report.replace(link_id, f"[📰 閱讀新聞](<{real_url}>)")
                     
