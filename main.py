@@ -1,11 +1,29 @@
+import requests
+import os
+import xml.etree.ElementTree as ET
+from urllib.parse import quote
+import time
+from datetime import datetime
+
+discord_webhook_url = os.getenv("DISCORD_WEBHOOK")
+gemini_key = os.getenv("GEMINI_API_KEY")
+
+def send_to_discord(text):
+    if not discord_webhook_url:
+        print("找不到 Discord Webhook")
+        return
+    chunk_size = 1800
+    for i in range(0, len(text), chunk_size):
+        requests.post(discord_webhook_url, json={"content": text[i:i+chunk_size]})
+        time.sleep(1)
+
 def fetch_and_send():
     if not gemini_key:
         send_to_discord("🛑 錯誤：找不到 GEMINI_API_KEY")
         return
 
-    # 【分流雷達設定】
+    # 【分流雷達設定】加入影視跨界關鍵字
     locations = '(台灣 OR 台北 OR 高雄 OR 桃園 OR 台南 OR 林口)'
-    # 👑 修改 1：在關鍵字中加入「電影、戲劇、出演、影集」，一網打盡影視情報
     events = '(演唱會 OR 售票 OR 搶票 OR 見面會 OR 聯名 OR 快閃 OR 簽售 OR 品牌 OR 代言 OR 電影 OR 戲劇 OR 出演 OR 影集)'
 
     q1 = '"TWICE" OR "ITZY" OR "BABYMONSTER" OR "aespa" OR "LE SSERAFIM" OR "NMIXX" OR "BLACKPINK" OR "NewJeans" OR "IVE" OR "I-DLE" OR "QWER" OR "ILLIT" OR "MEOVV"'
@@ -46,7 +64,6 @@ def fetch_and_send():
 
     today_str = datetime.now().strftime("%Y年%m月%d日")
 
-    # 👑 修改 2：更新 AI 指令，明確把「影視作品出演」列入重點定義
     prompt = f"""
     今天是 {today_str}。請作為一個資料處理程式，分析以下台灣新聞：
     {news_list}
@@ -94,3 +111,6 @@ def fetch_and_send():
         except Exception as e:
             send_to_discord(f"❌ **呼叫 AI 發生錯誤**: {str(e)}")
             break
+
+if __name__ == "__main__":
+    fetch_and_send()
