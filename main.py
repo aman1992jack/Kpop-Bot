@@ -40,23 +40,28 @@ def fetch_and_send():
 
     events = '(演唱會 OR 售票 OR 搶票 OR 見面會 OR 聯名 OR 快閃 OR 簽售 OR 品牌 OR 代言 OR 電影 OR 戲劇 OR 出演 OR 影集 OR 大銀幕 OR 主演 OR 回歸 OR 新歌)'
 
-    q1 = '"TWICE" OR "ITZY" OR "BABYMONSTER" OR "aespa" OR "LE SSERAFIM" OR "NMIXX" OR "BLACKPINK" OR "NewJeans" OR "IVE" OR "I-DLE" OR "QWER" OR "ILLIT" OR "MEOVV" OR "幻藍小熊" OR "GENBLUE"'
-    q2 = '"BTS" OR "SEVENTEEN" OR "Stray Kids" OR "TXT" OR "CRAVITY" OR "BIGBANG" OR "少女時代" OR "ALLDAY PROJECT" OR "CORTIS"'
-    q3 = '"IU" OR "泫雅" OR "太妍" OR "潤娥" OR "Yena" OR "崔叡娜" OR "叡娜" OR "GD" OR "T.O.P." OR "子瑜" OR "舒華" OR "薇娟" OR "美延" OR "Karina" OR "劉知珉" OR "Winter" OR "張員瑛" OR "Jennie" OR "Lisa" OR "Jisoo" OR "Rosé"'
+    # 👑 將大鍋飯拆解，每一組藝人/團體獨立成為一個 VIP 搜尋名單
+    artist_list = [
+        '"TWICE"', '"ITZY"', '"BABYMONSTER"', '"aespa"', '"LE SSERAFIM"', '"NMIXX"', '"BLACKPINK"', '"NewJeans"', '"IVE"', '"I-DLE"', '"QWER"', '"ILLIT"', '"MEOVV"', '"幻藍小熊"', '"GENBLUE"',
+        '"BTS"', '"SEVENTEEN"', '"Stray Kids"', '"TXT"', '"CRAVITY"', '"BIGBANG"', '"少女時代"', '"ALLDAY PROJECT"', '"CORTIS"',
+        '"IU"', '"泫雅"', '"太妍"', '"潤娥"', '("Yena" OR "崔叡娜")', '"GD"', '"T.O.P."', '"子瑜"', '"舒華"', '("薇娟" OR "美延")', '("Karina" OR "劉知珉")', '"Winter"', '"張員瑛"', '"Jennie"', '"Lisa"', '"Jisoo"', '"Rosé"'
+    ]
 
-    queries = [q1, q2, q3]
     all_news_dict = {}
     url_mapping = {} 
     news_counter = 1
 
-    for q in queries:
-        full_query = f"({q}) {events} when:30d" 
+    # 👑 為每一位藝人單獨進行精準搜索，徹底消滅頂流排擠效應！
+    for artist in artist_list:
+        full_query = f"{artist} {events} when:14d" # 縮短為 14 天，確保抓到的是最新熱點
         rss_url = f"https://news.google.com/rss/search?q={quote(full_query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
         try:
-            res = requests.get(rss_url, timeout=15)
+            # 加上短暫延遲，避免瞬間請求過多被 Google 阻擋
+            time.sleep(0.5)
+            res = requests.get(rss_url, timeout=10)
             root = ET.fromstring(res.text)
-            # 👑 擴大搜索面：從 50 條提升到 100 條，絕不放過任何角落！
-            items = root.findall('.//item')[:100] 
+            # 每位藝人只取最相關的前 3 篇！確保版面留給所有人
+            items = root.findall('.//item')[:3] 
             for item in items:
                 title = item.find('title').text
                 link = item.find('link').text
@@ -88,8 +93,8 @@ def fetch_and_send():
     
     請嚴格執行以下 4 大鐵則，若不符合請【直接剔除】，寧缺勿濫：
     
-    1. 【強制去重 (唯一化)】：同一個活動（例如 IVE 台北演唱會），不管清單裡有幾篇報導，【強制合併成唯一 1 筆】！挑選資訊最齊全的一篇作為代表連結。絕對不准出現重複的活動！
-    2. 【擊殺懶人包】：看到標題含有「懶人包、總整理、盤點、全攻略」的統整性新聞，請【直接刪除】！我們只需要獨立情報，不需要空泛的盤點。
+    1. 【強制去重 (唯一化)】：同一個活動，不管清單裡有幾篇報導，【強制合併成唯一 1 筆】！挑選資訊最齊全的一篇作為代表連結。
+    2. 【擊殺懶人包】：看到標題含有「懶人包、總整理、盤點、全攻略」的統整性新聞，請【直接刪除】！
     3. 【地域與時間雙重過濾】：
        - 實體活動（演唱會/見面會/快閃）：【僅限台灣】。海外一律刪除。
        - 絕對不要財經分析(營收/股價)、炎上爭議、八卦緋聞、機場穿搭。
@@ -114,12 +119,11 @@ def fetch_and_send():
         ]
     }
     
-    send_to_discord(f"⏳ 啟動 {report_type} 深度掃描！搜索範圍擴大至 300 篇，正在進行 5 分鐘精準去重過濾...")
+    send_to_discord(f"⏳ 啟動 {report_type} VIP 獨立打撈！正在為每一位偶像單獨搜索最新情報...")
     
     max_retries = 5
     for attempt in range(max_retries):
         try:
-            # 👑 思考時間大升級：給予 AI 5分鐘 (300 秒) 處理龐大資料！
             api_res = requests.post(api_url, json=payload, timeout=300)
             if api_res.status_code == 200:
                 res_json = api_res.json()
