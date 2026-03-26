@@ -32,6 +32,9 @@ def fetch_and_send():
         send_to_discord("🛑 錯誤：找不到 GEMINI_API_KEY")
         return
 
+    # 👑 把舒華的「大銀幕」、「主演」以及音樂回歸的關鍵字補上！
+    events = '(演唱會 OR 售票 OR 搶票 OR 見面會 OR 聯名 OR 快閃 OR 簽售 OR 品牌 OR 代言 OR 電影 OR 戲劇 OR 出演 OR 影集 OR 大銀幕 OR 主演 OR 回歸 OR 新歌)'
+
     q1 = '"TWICE" OR "ITZY" OR "BABYMONSTER" OR "aespa" OR "LE SSERAFIM" OR "NMIXX" OR "BLACKPINK" OR "NewJeans" OR "IVE" OR "I-DLE" OR "QWER" OR "ILLIT" OR "MEOVV" OR "幻藍小熊" OR "GENBLUE"'
     q2 = '"BTS" OR "SEVENTEEN" OR "Stray Kids" OR "TXT" OR "CRAVITY" OR "BIGBANG" OR "少女時代" OR "ALLDAY PROJECT" OR "CORTIS"'
     q3 = '"IU" OR "泫雅" OR "太妍" OR "潤娥" OR "Yena" OR "GD" OR "T.O.P." OR "子瑜" OR "舒華" OR "薇娟" OR "美延" OR "Karina" OR "劉知珉" OR "Winter" OR "張員瑛" OR "Jennie" OR "Lisa" OR "Jisoo" OR "Rosé"'
@@ -42,7 +45,8 @@ def fetch_and_send():
     news_counter = 1
 
     for q in queries:
-        full_query = f"({q}) when:1m" 
+        # 👑 修正烏龍：改為 when:30d (過去 30 天內)，絕不再要 60 秒內的新聞了！
+        full_query = f"({q}) {events} when:30d" 
         rss_url = f"https://news.google.com/rss/search?q={quote(full_query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
         try:
             res = requests.get(rss_url, timeout=15)
@@ -75,8 +79,8 @@ def fetch_and_send():
     
     請嚴格執行以下情報萃取任務：
     1. 【鎖定高價值情報】：幫我精準挑出名單內藝人的「實體活動 (演唱會/見面會/簽售/快閃)」、「品牌代言/聯名」、「影視作品出演/大銀幕/戲劇」、「發布新歌/回歸/專輯」。
-    2. 【無情過濾垃圾】：絕對要過濾掉無意義的網友吵架、單純的機場穿搭、沒有實質企劃的農場文或八卦緋聞。
-    3. 【無視時間枷鎖】：只要是符合第一點的高價值情報，【無論有沒有公布明確日期】，通通幫我列出來！
+    2. 【無情過濾垃圾】：過濾掉無意義的網友吵架、單純的機場穿搭、八卦緋聞。
+    3. 【無視時間枷鎖】：只要是符合第一點的情報，【無論有沒有公布明確的舉辦日期】，通通幫我列出來！
     
     輸出規定：
     - 絕對不要有任何問候語、廢話或開場白。
@@ -86,7 +90,7 @@ def fetch_and_send():
     
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
     
-    # 👑 解開大腦安全枷鎖：把所有敏感度降到最低 (BLOCK_NONE)
+    # 保持大腦解鎖狀態
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "safetySettings": [
@@ -97,7 +101,7 @@ def fetch_and_send():
         ]
     }
     
-    send_to_discord("⏳ 啟動大腦完全解放模式 (安全枷鎖已解除)！正在分析全網最新情報...")
+    send_to_discord("⏳ 啟動終極大腦 (30天保鮮版)！正在分析全網最新情報...")
     
     max_retries = 5
     for attempt in range(max_retries):
@@ -107,7 +111,6 @@ def fetch_and_send():
                 res_json = api_res.json()
                 candidate = res_json.get('candidates', [{}])[0]
                 
-                # 👑 防呆機制：檢查 AI 是否還是因為某些極端原因拒絕回答
                 if 'content' in candidate and 'parts' in candidate['content']:
                     report = candidate['content']['parts'][0]['text']
                     
@@ -118,7 +121,7 @@ def fetch_and_send():
                     send_to_discord(final_msg)
                 else:
                     finish_reason = candidate.get('finishReason', '未知原因')
-                    send_to_discord(f"⚠️ AI 拒絕分析！原因代碼：{finish_reason} (這批新聞可能包含過度極端的違規字眼，導致系統強制攔截)。")
+                    send_to_discord(f"⚠️ AI 拒絕分析！原因代碼：{finish_reason}")
                 break
             elif api_res.status_code == 503:
                 time.sleep(20)
