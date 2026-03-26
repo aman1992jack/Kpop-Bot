@@ -13,42 +13,43 @@ def send_to_discord(text):
     if not discord_webhook_url:
         print("找不到 Discord Webhook")
         return
+    # Discord 單則訊息上限 2000，我們設 1800 確保安全
     chunk_size = 1800
     for i in range(0, len(text), chunk_size):
         requests.post(discord_webhook_url, json={"content": text[i:i+chunk_size]})
         time.sleep(1)
 
-def test_playwright_social():
-    report = "🕸️ **【社群平台 Playwright 抓取測試】**\n\n"
+def check_weverse():
+    report = "🕸️ **【Weverse 官方公告巡邏】**\n\n"
+    
+    # 👑 【Weverse 直達車名單】
+    # 你可以在這裡無限新增你想監控的團體，但記得一定要放 /notice 結尾的網址！
+    weverse_targets = {
+        "BABYMONSTER": "https://weverse.io/babymonster/notice",
+        "LE SSERAFIM": "https://weverse.io/lesserafim/notice",
+        "ILLIT": "https://weverse.io/illit/notice"
+    }
+    
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
             
-            # 1. 測試 Weverse
-            report += "🔍 **目標：Weverse (BABYMONSTER)**\n"
-            try:
-                page.goto("https://weverse.io/babymonster/notice/34440", timeout=15000)
-                page.wait_for_selector(".container, .data-container, table tbody tr, .loading-spinner", timeout=10000)
-                time.sleep(2)
-                text = page.locator("body").inner_text()
-                clean_text = text[:150].replace('\n', ' ') # 👑 修復點
-                report += f"✅ 成功！預覽：`{clean_text}...`\n\n"
-            except Exception as e:
-                report += f"❌ 失敗：{str(e)}\n\n"
-                
-            # 2. 測試 Threads
-            report += "🔍 **目標：Threads**\n"
-            try:
-                page.goto("https://www.threads.net/", timeout=15000)
-                page.wait_for_selector("._ammd, ._aqff, .system-fonts--body, .segoe", timeout=10000)
-                time.sleep(2)
-                text = page.locator("body").inner_text()
-                clean_text = text[:150].replace('\n', ' ') # 👑 修復點
-                report += f"✅ 成功！預覽：`{clean_text}...`\n\n"
-            except Exception as e:
-                report += f"❌ 失敗：{str(e)}\n\n"
-                
+            for group, url in weverse_targets.items():
+                try:
+                    # 直接空降該團體的公告區
+                    page.goto(url, timeout=20000)
+                    # Weverse 公告區通常會有很多 <a> (連結)，我們等它出現代表畫面載入完成了
+                    page.wait_for_selector("a", timeout=10000)
+                    time.sleep(3) # 強制等待 3 秒讓文字完全浮現
+                    
+                    text = page.locator("body").inner_text()
+                    # 抓取前 200 個字並清理換行，避免 Python 語法錯誤
+                    clean_text = text[:200].replace('\n', ' | ') 
+                    report += f"🔹 **{group}**: `{clean_text}...`\n\n"
+                except Exception as e:
+                    report += f"❌ **{group}**: 抓取失敗 (頁面超時或防護阻擋)\n\n"
+                    
             browser.close()
     except Exception as e:
         report += f"⚠️ Playwright 啟動失敗：{str(e)}\n"
@@ -77,6 +78,7 @@ def fetch_and_send():
         try:
             res = requests.get(rss_url, timeout=15)
             root = ET.fromstring(res.text)
+            # 確保抓取量夠大，避免舒華或 Yena 被演算法擠掉
             items = root.findall('.//item')[:30] 
             for item in items:
                 title = item.find('title').text
@@ -112,9 +114,9 @@ def fetch_and_send():
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    send_to_discord("⏳ 雷達啟動！正在收集新聞與測試社群平台...")
+    send_to_discord("⏳ 啟動隱身雷達！正在收集新聞與 Weverse 公告...")
     
-    social_report = test_playwright_social()
+    weverse_report = check_weverse()
     
     max_retries = 5
     for attempt in range(max_retries):
@@ -124,10 +126,12 @@ def fetch_and_send():
                 res_json = api_res.json()
                 report = res_json['candidates'][0]['content']['parts'][0]['text']
                 
+                # 👑 魔法隱身術：把代號換成 Discord 的 Markdown 連結格式
+                # 這樣畫面上只會顯示「點我閱讀新聞」，超長網址會被完美隱藏！
                 for link_id, real_url in url_mapping.items():
-                    report = report.replace(link_id, real_url)
+                    report = report.replace(link_id, f"[點我閱讀新聞]({real_url})")
                     
-                final_msg = f"📢 **【K-POP 終極雷達】**\n\n{report}\n\n---\n\n{social_report}"
+                final_msg = f"📢 **【K-POP 終極雷達】**\n\n{report}\n\n---\n\n{weverse_report}"
                 send_to_discord(final_msg)
                 break
             elif api_res.status_code == 503:
