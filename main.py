@@ -22,7 +22,6 @@ def test_playwright_social():
     report = "🕸️ **【社群平台 Playwright 抓取測試】**\n\n"
     try:
         with sync_playwright() as p:
-            # 啟動隱形 Chrome 瀏覽器
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
             
@@ -30,11 +29,11 @@ def test_playwright_social():
             report += "🔍 **目標：Weverse (BABYMONSTER)**\n"
             try:
                 page.goto("https://weverse.io/babymonster/notice/34440", timeout=15000)
-                # 使用朋友建議的 wait_for_selector
                 page.wait_for_selector(".container, .data-container, table tbody tr, .loading-spinner", timeout=10000)
-                time.sleep(2) # 額外給 2 秒緩衝讓文字完全渲染
+                time.sleep(2)
                 text = page.locator("body").inner_text()
-                report += f"✅ 成功！預覽：`{text[:150].replace('\n', ' ')}...`\n\n"
+                clean_text = text[:150].replace('\n', ' ') # 👑 修復點
+                report += f"✅ 成功！預覽：`{clean_text}...`\n\n"
             except Exception as e:
                 report += f"❌ 失敗：{str(e)}\n\n"
                 
@@ -45,7 +44,8 @@ def test_playwright_social():
                 page.wait_for_selector("._ammd, ._aqff, .system-fonts--body, .segoe", timeout=10000)
                 time.sleep(2)
                 text = page.locator("body").inner_text()
-                report += f"✅ 成功！預覽：`{text[:150].replace('\n', ' ')}...`\n\n"
+                clean_text = text[:150].replace('\n', ' ') # 👑 修復點
+                report += f"✅ 成功！預覽：`{clean_text}...`\n\n"
             except Exception as e:
                 report += f"❌ 失敗：{str(e)}\n\n"
                 
@@ -60,7 +60,6 @@ def fetch_and_send():
         send_to_discord("🛑 錯誤：找不到 GEMINI_API_KEY")
         return
 
-    # 【分流雷達設定：拔除地點限制，徹底解放】
     events = '(演唱會 OR 售票 OR 搶票 OR 見面會 OR 聯名 OR 快閃 OR 簽售 OR 品牌 OR 代言 OR 電影 OR 戲劇 OR 出演 OR 影集)'
 
     q1 = '"TWICE" OR "ITZY" OR "BABYMONSTER" OR "aespa" OR "LE SSERAFIM" OR "NMIXX" OR "BLACKPINK" OR "NewJeans" OR "IVE" OR "I-DLE" OR "QWER" OR "ILLIT" OR "MEOVV"'
@@ -73,12 +72,12 @@ def fetch_and_send():
     news_counter = 1
 
     for q in queries:
-        full_query = f"({q}) {events}" # 拿掉 locations 變數
+        full_query = f"({q}) {events}" 
         rss_url = f"https://news.google.com/rss/search?q={quote(full_query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
         try:
             res = requests.get(rss_url, timeout=15)
             root = ET.fromstring(res.text)
-            items = root.findall('.//item')[:30] # 購物車加大
+            items = root.findall('.//item')[:30] 
             for item in items:
                 title = item.find('title').text
                 link = item.find('link').text
@@ -92,7 +91,7 @@ def fetch_and_send():
         except Exception as e:
             continue
             
-    news_list = "\n".join(list(all_news_dict.values())[:80]) # 餵給 AI 的資料上限提高
+    news_list = "\n".join(list(all_news_dict.values())[:80]) 
 
     today_str = datetime.now().strftime("%Y年%m月%d日")
 
@@ -115,7 +114,6 @@ def fetch_and_send():
     
     send_to_discord("⏳ 雷達啟動！正在收集新聞與測試社群平台...")
     
-    # 執行 Playwright 測試並加入報告
     social_report = test_playwright_social()
     
     max_retries = 5
@@ -129,7 +127,6 @@ def fetch_and_send():
                 for link_id, real_url in url_mapping.items():
                     report = report.replace(link_id, real_url)
                     
-                # 將新聞 AI 整理結果與 Playwright 測試結果一起發送
                 final_msg = f"📢 **【K-POP 終極雷達】**\n\n{report}\n\n---\n\n{social_report}"
                 send_to_discord(final_msg)
                 break
