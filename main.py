@@ -1,22 +1,3 @@
-import requests
-import os
-import xml.etree.ElementTree as ET
-from urllib.parse import quote
-import time
-from datetime import datetime
-
-discord_webhook_url = os.getenv("DISCORD_WEBHOOK")
-gemini_key = os.getenv("GEMINI_API_KEY")
-
-def send_to_discord(text):
-    if not discord_webhook_url:
-        print("找不到 Discord Webhook")
-        return
-    chunk_size = 1800
-    for i in range(0, len(text), chunk_size):
-        requests.post(discord_webhook_url, json={"content": text[i:i+chunk_size]})
-        time.sleep(1)
-
 def fetch_and_send():
     if not gemini_key:
         send_to_discord("🛑 錯誤：找不到 GEMINI_API_KEY")
@@ -24,7 +5,8 @@ def fetch_and_send():
 
     # 【分流雷達設定】
     locations = '(台灣 OR 台北 OR 高雄 OR 桃園 OR 台南 OR 林口)'
-    events = '(演唱會 OR 售票 OR 搶票 OR 見面會 OR 聯名 OR 快閃 OR 簽售 OR 品牌 OR 代言)'
+    # 👑 修改 1：在關鍵字中加入「電影、戲劇、出演、影集」，一網打盡影視情報
+    events = '(演唱會 OR 售票 OR 搶票 OR 見面會 OR 聯名 OR 快閃 OR 簽售 OR 品牌 OR 代言 OR 電影 OR 戲劇 OR 出演 OR 影集)'
 
     q1 = '"TWICE" OR "ITZY" OR "BABYMONSTER" OR "aespa" OR "LE SSERAFIM" OR "NMIXX" OR "BLACKPINK" OR "NewJeans" OR "IVE" OR "I-DLE" OR "QWER" OR "ILLIT" OR "MEOVV"'
     q2 = '"BTS" OR "SEVENTEEN" OR "Stray Kids" OR "TXT" OR "CRAVITY" OR "BIGBANG" OR "少女時代" OR "ALLDAY PROJECT" OR "CORTIS"'
@@ -32,8 +14,6 @@ def fetch_and_send():
 
     queries = [q1, q2, q3]
     all_news_dict = {}
-    
-    # 👑 新增：存放「代號」與「真實超長網址」的對應表
     url_mapping = {} 
     news_counter = 1
 
@@ -49,12 +29,9 @@ def fetch_and_send():
                 link = item.find('link').text
                 pub_date = item.find('pubDate').text
                 
-                # 利用新聞標題去重，避免同一篇新聞重複抓
                 if title not in all_news_dict:
-                    # 建立防呆代號，例如 [LINK_01]
                     link_id = f"[LINK_{news_counter:02d}]"
                     url_mapping[link_id] = link
-                    # 餵給 AI 的清單只會出現代號
                     all_news_dict[title] = f"- [發布時間: {pub_date}] {title} (新聞代號: {link_id})"
                     news_counter += 1
         except Exception as e:
@@ -69,31 +46,31 @@ def fetch_and_send():
 
     today_str = datetime.now().strftime("%Y年%m月%d日")
 
-    # 【AI 深度過濾指令】
+    # 👑 修改 2：更新 AI 指令，明確把「影視作品出演」列入重點定義
     prompt = f"""
     今天是 {today_str}。請作為一個資料處理程式，分析以下台灣新聞：
     {news_list}
     
     請嚴格執行以下三層過濾邏輯：
     1. 去重與統整：新聞中可能有多家媒體報導同一個活動，請將相同活動的資訊合併，以資訊最完整的那篇為主。
-    2. 時間篩選：嚴格剔除「已經發生過的活動」、「售票日已過」的活動。只留下未來 3 個月內即將售票或舉辦的活動。
-    3. 重點定義：包含演唱會、見面會、簽售會、品牌代言活動、以及速食店/超商等實體聯名或快閃活動。
+    2. 時間篩選：嚴格剔除「已經發生過的實體活動」、「售票日已過」的活動。只留下未來 3 個月內即將售票、舉辦的活動，或「近期即將上映/播出的影視作品」。
+    3. 重點定義：包含演唱會、見面會、簽售會、品牌代言活動、實體聯名/快閃活動、以及「參演電影/戲劇/節目」等影視跨界消息。
     
     輸出規定（非常嚴格）：
     - 絕對不要輸出任何問候語、廢話、免責聲明、或搶票提醒。
     - 只能使用以下單一格式輸出：
     
-    🔥 [藝人/團體] | [活動種類] | [演出/活動日期與地點] | 售票：[日期與時間]
+    🔥 [藝人/團體] | [活動或影視種類] | [日期與地點/上映平台] | 售票/備註：[相關資訊]
     🔗 [新聞代號]
     
     注意：連結部分請直接輸出「[新聞代號]」即可（例如 🔗 [LINK_01]），絕對不要輸出任何網址。
-    如果經過篩選後，沒有未來 3 個月內的活動，請只輸出：「🤖 目前網路上無未來 3 個月內的最新 K-POP 活動情報。」
+    如果經過篩選後沒有任何情報，請只輸出：「🤖 目前網路上無未來 3 個月內的最新 K-POP 活動情報。」
     """
     
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    send_to_discord("⏳ 啟動防斷結雷達！正在請 Gemini 2.5 Flash 撰寫深度情報...")
+    send_to_discord("⏳ 啟動影視跨界擴充雷達！正在請 Gemini 2.5 Flash 撰寫深度情報...")
     
     max_retries = 5
     for attempt in range(max_retries):
@@ -103,11 +80,10 @@ def fetch_and_send():
                 res_json = api_res.json()
                 report = res_json['candidates'][0]['content']['parts'][0]['text']
                 
-                # 👑 魔法還原：在發送前，把 [LINK_01] 替換回原本 100% 完整的超長網址
                 for link_id, real_url in url_mapping.items():
                     report = report.replace(link_id, real_url)
                     
-                send_to_discord(f"📢 **【K-POP 終極雷達 (防斷結完美版)】**\n\n{report}")
+                send_to_discord(f"📢 **【K-POP 終極雷達 (影視擴充版)】**\n\n{report}")
                 break
             elif api_res.status_code == 503:
                 send_to_discord(f"⚠️ Google 伺服器塞車中 (503)，機器人將在 20 秒後發動第 {attempt + 1} 次重試...")
@@ -118,6 +94,3 @@ def fetch_and_send():
         except Exception as e:
             send_to_discord(f"❌ **呼叫 AI 發生錯誤**: {str(e)}")
             break
-
-if __name__ == "__main__":
-    fetch_and_send()
