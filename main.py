@@ -13,17 +13,25 @@ def send_to_discord(text):
     if not discord_webhook_url:
         print("找不到 Discord Webhook")
         return
-    # Discord 單則訊息上限 2000，我們設 1800 確保安全
-    chunk_size = 1800
-    for i in range(0, len(text), chunk_size):
-        requests.post(discord_webhook_url, json={"content": text[i:i+chunk_size]})
-        time.sleep(1)
+    
+    # 👑 終極切割法：按「換行」切割，絕對不切斷超長網址
+    lines = text.split('\n')
+    current_msg = ""
+    
+    for line in lines:
+        if len(current_msg) + len(line) + 1 > 1800:
+            requests.post(discord_webhook_url, json={"content": current_msg})
+            time.sleep(1)
+            current_msg = line + "\n"
+        else:
+            current_msg += line + "\n"
+            
+    if current_msg.strip():
+        requests.post(discord_webhook_url, json={"content": current_msg})
 
 def check_weverse():
     report = "🕸️ **【Weverse 官方公告巡邏】**\n\n"
     
-    # 👑 【Weverse 直達車名單】
-    # 你可以在這裡無限新增你想監控的團體，但記得一定要放 /notice 結尾的網址！
     weverse_targets = {
         "BABYMONSTER": "https://weverse.io/babymonster/notice",
         "LE SSERAFIM": "https://weverse.io/lesserafim/notice",
@@ -37,18 +45,21 @@ def check_weverse():
             
             for group, url in weverse_targets.items():
                 try:
-                    # 直接空降該團體的公告區
                     page.goto(url, timeout=20000)
-                    # Weverse 公告區通常會有很多 <a> (連結)，我們等它出現代表畫面載入完成了
-                    page.wait_for_selector("a", timeout=10000)
-                    time.sleep(3) # 強制等待 3 秒讓文字完全浮現
+                    # 👑 精準打擊：只等候「公告連結」出現
+                    page.wait_for_selector("a[href*='/notice/']", timeout=10000)
+                    time.sleep(2)
                     
-                    text = page.locator("body").inner_text()
-                    # 抓取前 200 個字並清理換行，避免 Python 語法錯誤
-                    clean_text = text[:200].replace('\n', ' | ') 
-                    report += f"🔹 **{group}**: `{clean_text}...`\n\n"
+                    # 只抓取公告標題的文字，無視其他選單
+                    notice_links = page.locator("a[href*='/notice/']").all_inner_texts()
+                    if notice_links:
+                        # 將前幾個公告標題串起來，清理換行
+                        clean_text = " | ".join([t.strip() for t in notice_links if t.strip()])[:200].replace('\n', '')
+                        report += f"🔹 **{group}**: `{clean_text}...`\n\n"
+                    else:
+                        report += f"🔹 **{group}**: 目前無最新公告\n\n"
                 except Exception as e:
-                    report += f"❌ **{group}**: 抓取失敗 (頁面超時或防護阻擋)\n\n"
+                    report += f"❌ **{group}**: 抓取超時\n\n"
                     
             browser.close()
     except Exception as e:
@@ -63,7 +74,8 @@ def fetch_and_send():
 
     events = '(演唱會 OR 售票 OR 搶票 OR 見面會 OR 聯名 OR 快閃 OR 簽售 OR 品牌 OR 代言 OR 電影 OR 戲劇 OR 出演 OR 影集)'
 
-    q1 = '"TWICE" OR "ITZY" OR "BABYMONSTER" OR "aespa" OR "LE SSERAFIM" OR "NMIXX" OR "BLACKPINK" OR "NewJeans" OR "IVE" OR "I-DLE" OR "QWER" OR "ILLIT" OR "MEOVV"'
+    # 👑 新增幻藍小熊 (GENBLUE) 與擴充名單
+    q1 = '"TWICE" OR "ITZY" OR "BABYMONSTER" OR "aespa" OR "LE SSERAFIM" OR "NMIXX" OR "BLACKPINK" OR "NewJeans" OR "IVE" OR "I-DLE" OR "QWER" OR "ILLIT" OR "MEOVV" OR "幻藍小熊" OR "GENBLUE"'
     q2 = '"BTS" OR "SEVENTEEN" OR "Stray Kids" OR "TXT" OR "CRAVITY" OR "BIGBANG" OR "少女時代" OR "ALLDAY PROJECT" OR "CORTIS"'
     q3 = '"IU" OR "泫雅" OR "太妍" OR "潤娥" OR "Yena" OR "GD" OR "T.O.P." OR "子瑜" OR "舒華" OR "薇娟" OR "美延" OR "Karina" OR "劉知珉" OR "Winter" OR "張員瑛" OR "Jennie" OR "Lisa" OR "Jisoo" OR "Rosé"'
 
@@ -78,8 +90,8 @@ def fetch_and_send():
         try:
             res = requests.get(rss_url, timeout=15)
             root = ET.fromstring(res.text)
-            # 確保抓取量夠大，避免舒華或 Yena 被演算法擠掉
-            items = root.findall('.//item')[:30] 
+            # 👑 購物車大幅升級：每批抓 50 篇，總共可達 150 篇，避免小眾情報被擠掉
+            items = root.findall('.//item')[:50] 
             for item in items:
                 title = item.find('title').text
                 link = item.find('link').text
@@ -93,7 +105,8 @@ def fetch_and_send():
         except Exception as e:
             continue
             
-    news_list = "\n".join(list(all_news_dict.values())[:80]) 
+    # 解除上限，把所有新聞都餵給大腦
+    news_list = "\n".join(list(all_news_dict.values())) 
 
     today_str = datetime.now().strftime("%Y年%m月%d日")
 
@@ -108,13 +121,13 @@ def fetch_and_send():
     輸出規定：
     - 不要有廢話或問候語。
     - 格式：🔥 [藝人/團體] | [活動或影視種類] | [日期與地點/上映平台] | 售票/備註：[資訊]
-    🔗 [新聞代號]
+    - 🔗 每個活動【只能保留一個】最具代表性的新聞代號，請直接輸出代號（如：[LINK_01]），不要列出多個！
     """
     
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    send_to_discord("⏳ 啟動隱身雷達！正在收集新聞與 Weverse 公告...")
+    send_to_discord("⏳ 啟動終極淨化雷達！正在收集海量新聞與精準掃描 Weverse...")
     
     weverse_report = check_weverse()
     
@@ -126,10 +139,9 @@ def fetch_and_send():
                 res_json = api_res.json()
                 report = res_json['candidates'][0]['content']['parts'][0]['text']
                 
-                # 👑 魔法隱身術：把代號換成 Discord 的 Markdown 連結格式
-                # 這樣畫面上只會顯示「點我閱讀新聞」，超長網址會被完美隱藏！
+                # 👑 完美隱身術：利用 < > 包住超長網址，徹底關閉 Discord 預覽大圖
                 for link_id, real_url in url_mapping.items():
-                    report = report.replace(link_id, f"[點我閱讀新聞]({real_url})")
+                    report = report.replace(link_id, f"[📰 閱讀新聞](<{real_url}>)")
                     
                 final_msg = f"📢 **【K-POP 終極雷達】**\n\n{report}\n\n---\n\n{weverse_report}"
                 send_to_discord(final_msg)
