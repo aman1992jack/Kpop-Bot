@@ -18,14 +18,20 @@ def send_to_discord(text):
     
     for line in lines:
         if len(current_msg) + len(line) + 1 > 1800:
-            requests.post(discord_webhook_url, json={"content": current_msg})
+            try:
+                requests.post(discord_webhook_url, json={"content": current_msg}, timeout=10)
+            except:
+                pass
             time.sleep(1)
             current_msg = line + "\n"
         else:
             current_msg += line + "\n"
             
     if current_msg.strip():
-        requests.post(discord_webhook_url, json={"content": current_msg})
+        try:
+            requests.post(discord_webhook_url, json={"content": current_msg}, timeout=10)
+        except:
+            pass
 
 def fetch_and_send():
     if not gemini_key:
@@ -71,7 +77,6 @@ def fetch_and_send():
 
     today_str = datetime.now().strftime("%Y年%m月%d日")
 
-    # 👑 植入你設計的完美 SOP：動態日曆與地域雙重過濾
     prompt = f"""
     今天是 {today_str}。請作為專業的 K-POP 台灣站情報分析師，分析以下新聞清單：
     {news_list}
@@ -79,12 +84,12 @@ def fetch_and_send():
     請嚴格執行以下情報萃取與過濾 SOP：
     
     1. 【地域限制 - 專注台灣】：
-       - 實體活動（演唱會、見面會、簽售會、快閃店、展覽）：【必須在台灣（包含台北、高雄、林口、桃園等）】。嚴格剔除香港、澳門、韓國、日本等海外活動。
+       - 實體活動（演唱會、見面會、簽售會、快閃店、展覽）：【必須在台灣（包含台北、高雄、林口、桃園等）】。嚴格剔除海外活動。
        - 全球性情報（發布新歌、回歸、出新專輯、影視作品上映、國際品牌代言）：不限地區，請一律保留。
        
-    2. 【動態時間過濾】（非常重要，請以今天日期 {today_str} 為基準核對）：
-       - 單次性活動（演唱會、簽售會、頒獎典禮）：如果活動舉辦日期「已經過去」，請【直接剔除】（例如已經辦完的大巨蛋演唱會、過去的音樂節）。
-       - 持續性活動（超商聯名、快閃店、品牌代言）：如果今天還在「活動效期內」，請保留；若活動已明確結束，請剔除。
+    2. 【動態時間過濾】（請以今天日期 {today_str} 為基準核對）：
+       - 單次性活動（演唱會、簽售會、頒獎典禮）：如果活動舉辦日期「已經過去」，請【直接剔除】。
+       - 持續性活動（超商聯名、快閃店、品牌代言）：如果今天還在「活動效期內」，請保留；若已結束，請剔除。
        
     3. 【無情過濾垃圾】：剔除網友八卦、吵架、單純機場穿搭、無明確企劃的農場文。
     
@@ -106,12 +111,13 @@ def fetch_and_send():
         ]
     }
     
-    send_to_discord("⏳ 啟動動態日曆過濾！正在為您篩選最新鮮的台灣情報...")
+    send_to_discord("⏳ 啟動動態日曆防卡死雷達！正在為您篩選最新鮮的台灣情報...")
     
     max_retries = 5
     for attempt in range(max_retries):
         try:
-            api_res = requests.post(api_url, json=payload, timeout=None)
+            # 👑 聽你的建議：給予 AI 充分的 3 分鐘 (180 秒) 思考時間！
+            api_res = requests.post(api_url, json=payload, timeout=180)
             if api_res.status_code == 200:
                 res_json = api_res.json()
                 candidate = res_json.get('candidates', [{}])[0]
@@ -134,8 +140,8 @@ def fetch_and_send():
                 send_to_discord(f"❌ **API 錯誤**: {api_res.status_code}")
                 break
         except Exception as e:
-            send_to_discord(f"❌ **錯誤**: {str(e)}")
-            break
+            send_to_discord(f"⚠️ 第 {attempt + 1} 次嘗試失敗 (等待超過 3 分鐘)，準備重試...")
+            time.sleep(5) 
 
 if __name__ == "__main__":
     fetch_and_send()
