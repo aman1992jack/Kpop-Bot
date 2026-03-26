@@ -10,16 +10,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4  # 升級到 v4，消除黃色警告
+        uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v5 # 升級到 v5，消除黃色警告
+        uses: actions/setup-python@v5
         with:
           python-version: '3.9'
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install requests playwright
-          playwright install chromium
-          sudo playwright install-deps chromium  # 👑 關鍵修復：安裝 Linux 系統必備的瀏覽器底層套件！
+          python -m playwright install chromium
+          python -m playwright install-deps chromium
       - name: Run bot
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
