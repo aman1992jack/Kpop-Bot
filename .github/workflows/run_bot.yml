@@ -2,7 +2,6 @@ name: KPOP Bot Daily Run
 
 on:
   schedule:
-    # 避開正點塞車！改成每天台灣時間 11:17 和 23:17 執行
     - cron: '17 3,15 * * *'
   workflow_dispatch:
 
@@ -11,15 +10,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4  # 升級到 v4，消除黃色警告
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5 # 升級到 v5，消除黃色警告
         with:
           python-version: '3.9'
       - name: Install dependencies
         run: |
           pip install requests playwright
           playwright install chromium
+          sudo playwright install-deps chromium  # 👑 關鍵修復：安裝 Linux 系統必備的瀏覽器底層套件！
       - name: Run bot
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
