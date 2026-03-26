@@ -32,7 +32,6 @@ def fetch_and_send():
         send_to_discord("🛑 錯誤：找不到 GEMINI_API_KEY")
         return
 
-    # 👑 撤銷所有活動關鍵字限制，只保留藝人名單
     q1 = '"TWICE" OR "ITZY" OR "BABYMONSTER" OR "aespa" OR "LE SSERAFIM" OR "NMIXX" OR "BLACKPINK" OR "NewJeans" OR "IVE" OR "I-DLE" OR "QWER" OR "ILLIT" OR "MEOVV" OR "幻藍小熊" OR "GENBLUE"'
     q2 = '"BTS" OR "SEVENTEEN" OR "Stray Kids" OR "TXT" OR "CRAVITY" OR "BIGBANG" OR "少女時代" OR "ALLDAY PROJECT" OR "CORTIS"'
     q3 = '"IU" OR "泫雅" OR "太妍" OR "潤娥" OR "Yena" OR "GD" OR "T.O.P." OR "子瑜" OR "舒華" OR "薇娟" OR "美延" OR "Karina" OR "劉知珉" OR "Winter" OR "張員瑛" OR "Jennie" OR "Lisa" OR "Jisoo" OR "Rosé"'
@@ -43,13 +42,11 @@ def fetch_and_send():
     news_counter = 1
 
     for q in queries:
-        # 👑 直接用藝人名字搜尋最近一個月的新聞，一網打盡不漏接！
         full_query = f"({q}) when:1m" 
         rss_url = f"https://news.google.com/rss/search?q={quote(full_query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
         try:
             res = requests.get(rss_url, timeout=15)
             root = ET.fromstring(res.text)
-            # 抓取前 50 篇，三批總共餵給 AI 150 篇新聞
             items = root.findall('.//item')[:50] 
             for item in items:
                 title = item.find('title').text
@@ -65,10 +62,13 @@ def fetch_and_send():
             continue
             
     news_list = "\n".join(list(all_news_dict.values())) 
+    
+    if not news_list.strip():
+        send_to_discord("🤖 爬蟲回報：目前各大平台均無相關新聞。")
+        return
 
     today_str = datetime.now().strftime("%Y年%m月%d日")
 
-    # 👑 將所有判斷邏輯全部交給 AI 大腦
     prompt = f"""
     今天是 {today_str}。請作為專業的 K-POP 情報分析師，分析以下台灣新聞清單：
     {news_list}
@@ -85,9 +85,19 @@ def fetch_and_send():
     """
     
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    send_to_discord("⏳ 啟動大腦完全解放模式！正在分析全網最新情報...")
+    # 👑 解開大腦安全枷鎖：把所有敏感度降到最低 (BLOCK_NONE)
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "safetySettings": [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+        ]
+    }
+    
+    send_to_discord("⏳ 啟動大腦完全解放模式 (安全枷鎖已解除)！正在分析全網最新情報...")
     
     max_retries = 5
     for attempt in range(max_retries):
@@ -95,13 +105,20 @@ def fetch_and_send():
             api_res = requests.post(api_url, json=payload, timeout=None)
             if api_res.status_code == 200:
                 res_json = api_res.json()
-                report = res_json['candidates'][0]['content']['parts'][0]['text']
+                candidate = res_json.get('candidates', [{}])[0]
                 
-                for link_id, real_url in url_mapping.items():
-                    report = report.replace(link_id, f"[📰 閱讀新聞](<{real_url}>)")
+                # 👑 防呆機制：檢查 AI 是否還是因為某些極端原因拒絕回答
+                if 'content' in candidate and 'parts' in candidate['content']:
+                    report = candidate['content']['parts'][0]['text']
                     
-                final_msg = f"📢 **【K-POP 終極雷達】**\n\n{report}"
-                send_to_discord(final_msg)
+                    for link_id, real_url in url_mapping.items():
+                        report = report.replace(link_id, f"[📰 閱讀新聞](<{real_url}>)")
+                        
+                    final_msg = f"📢 **【K-POP 終極雷達】**\n\n{report}"
+                    send_to_discord(final_msg)
+                else:
+                    finish_reason = candidate.get('finishReason', '未知原因')
+                    send_to_discord(f"⚠️ AI 拒絕分析！原因代碼：{finish_reason} (這批新聞可能包含過度極端的違規字眼，導致系統強制攔截)。")
                 break
             elif api_res.status_code == 503:
                 time.sleep(20)
