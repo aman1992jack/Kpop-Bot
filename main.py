@@ -3,7 +3,7 @@ import os
 import xml.etree.ElementTree as ET
 from urllib.parse import quote
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 discord_webhook_url = os.getenv("DISCORD_WEBHOOK")
 gemini_key = os.getenv("GEMINI_API_KEY")
@@ -75,23 +75,30 @@ def fetch_and_send():
         send_to_discord("🤖 爬蟲回報：目前各大平台均無相關新聞。")
         return
 
-    today_str = datetime.now().strftime("%Y年%m月%d日")
+    # 👑 處理台灣時間與早晚報邏輯
+    # GitHub 伺服器是 UTC，加 8 小時換算成台灣時間
+    tw_time = datetime.utcnow() + timedelta(hours=8)
+    today_str = tw_time.strftime("%Y年%m月%d日")
+    short_date = f"{tw_time.month}/{tw_time.day}"
+    # 下午 3 點前算早報，3 點後算晚報
+    report_type = "早報" if tw_time.hour < 15 else "晚報"
+    header_title = f"【K-POP 終極雷達 - {short_date} {report_type}】"
 
     prompt = f"""
-    今天是 {today_str}。請作為專業的 K-POP 台灣站情報分析師，分析以下新聞清單：
+    今天是 {today_str}。請作為嚴格的 K-POP 台灣站情報分析師，分析以下新聞清單：
     {news_list}
     
-    請嚴格執行以下情報萃取與過濾 SOP：
+    請嚴格執行以下 SOP，若不符合請【直接剔除】，寧缺勿濫：
     
-    1. 【地域限制 - 專注台灣】：
-       - 實體活動（演唱會、見面會、簽售會、快閃店、展覽）：【必須在台灣（包含台北、高雄、林口、桃園等）】。嚴格剔除海外活動。
-       - 全球性情報（發布新歌、回歸、出新專輯、影視作品上映、國際品牌代言）：不限地區，請一律保留。
-       
-    2. 【動態時間過濾】（請以今天日期 {today_str} 為基準核對）：
-       - 單次性活動（演唱會、簽售會、頒獎典禮）：如果活動舉辦日期「已經過去」，請【直接剔除】。
-       - 持續性活動（超商聯名、快閃店、品牌代言）：如果今天還在「活動效期內」，請保留；若已結束，請剔除。
-       
-    3. 【無情過濾垃圾】：剔除網友八卦、吵架、單純機場穿搭、無明確企劃的農場文。
+    1. 【只留核心情報】：只抓取「台灣實體活動 (演唱會/見面會/簽售/快閃/展覽)」、「全球性音樂回歸/新歌/新專輯」、「影視作品大銀幕上映」、「台灣區或國際品牌代言」。
+    2. 【地域絕對限制】：實體活動【僅限台灣】(台北、高雄等)。看到韓國、香港、美國等海外演唱會或音樂節，直接刪除！
+    3. 【無情剔除垃圾與財經 (黑名單)】：
+       - ❌ 絕對不要財經/產業分析：剔除所有包含「營收、股價、參投、票房分析、產業鏈」的商業新聞（如寬魚國際、必應創造等報導）。
+       - ❌ 絕對不要爭議與八卦：剔除「炎上、霸凌、歧視、維安爭議、粉絲吵架、公司糾紛、合約問題、失言」。
+       - ❌ 絕對不要花邊新聞：剔除「機場穿搭、下衣失蹤、緋聞、單純的社群貼文分享」。
+    4. 【動態時間過濾】：
+       - 單次性活動（如演唱會）若已結束，直接剔除。
+       - 持續性活動（如聯名）若已過期，直接剔除。
     
     輸出規定：
     - 絕對不要有任何問候語、廢話或開場白。
@@ -111,12 +118,11 @@ def fetch_and_send():
         ]
     }
     
-    send_to_discord("⏳ 啟動動態日曆防卡死雷達！正在為您篩選最新鮮的台灣情報...")
+    send_to_discord(f"⏳ 啟動 {report_type} 彙整！正在過濾財經與八卦，篩選純淨情報...")
     
     max_retries = 5
     for attempt in range(max_retries):
         try:
-            # 👑 聽你的建議：給予 AI 充分的 3 分鐘 (180 秒) 思考時間！
             api_res = requests.post(api_url, json=payload, timeout=180)
             if api_res.status_code == 200:
                 res_json = api_res.json()
@@ -128,7 +134,8 @@ def fetch_and_send():
                     for link_id, real_url in url_mapping.items():
                         report = report.replace(link_id, f"[📰 閱讀新聞](<{real_url}>)")
                         
-                    final_msg = f"📢 **【K-POP 終極雷達】**\n\n{report}"
+                    # 👑 換上帥氣的早晚報動態標題
+                    final_msg = f"📢 **{header_title}**\n\n{report}"
                     send_to_discord(final_msg)
                 else:
                     finish_reason = candidate.get('finishReason', '未知原因')
