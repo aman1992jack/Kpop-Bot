@@ -32,7 +32,6 @@ def fetch_and_send():
         send_to_discord("🛑 錯誤：找不到 GEMINI_API_KEY")
         return
 
-    # 👑 把舒華的「大銀幕」、「主演」以及音樂回歸的關鍵字補上！
     events = '(演唱會 OR 售票 OR 搶票 OR 見面會 OR 聯名 OR 快閃 OR 簽售 OR 品牌 OR 代言 OR 電影 OR 戲劇 OR 出演 OR 影集 OR 大銀幕 OR 主演 OR 回歸 OR 新歌)'
 
     q1 = '"TWICE" OR "ITZY" OR "BABYMONSTER" OR "aespa" OR "LE SSERAFIM" OR "NMIXX" OR "BLACKPINK" OR "NewJeans" OR "IVE" OR "I-DLE" OR "QWER" OR "ILLIT" OR "MEOVV" OR "幻藍小熊" OR "GENBLUE"'
@@ -45,7 +44,6 @@ def fetch_and_send():
     news_counter = 1
 
     for q in queries:
-        # 👑 修正烏龍：改為 when:30d (過去 30 天內)，絕不再要 60 秒內的新聞了！
         full_query = f"({q}) {events} when:30d" 
         rss_url = f"https://news.google.com/rss/search?q={quote(full_query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
         try:
@@ -73,24 +71,31 @@ def fetch_and_send():
 
     today_str = datetime.now().strftime("%Y年%m月%d日")
 
+    # 👑 植入你設計的完美 SOP：動態日曆與地域雙重過濾
     prompt = f"""
-    今天是 {today_str}。請作為專業的 K-POP 情報分析師，分析以下台灣新聞清單：
+    今天是 {today_str}。請作為專業的 K-POP 台灣站情報分析師，分析以下新聞清單：
     {news_list}
     
-    請嚴格執行以下情報萃取任務：
-    1. 【鎖定高價值情報】：幫我精準挑出名單內藝人的「實體活動 (演唱會/見面會/簽售/快閃)」、「品牌代言/聯名」、「影視作品出演/大銀幕/戲劇」、「發布新歌/回歸/專輯」。
-    2. 【無情過濾垃圾】：過濾掉無意義的網友吵架、單純的機場穿搭、八卦緋聞。
-    3. 【無視時間枷鎖】：只要是符合第一點的情報，【無論有沒有公布明確的舉辦日期】，通通幫我列出來！
+    請嚴格執行以下情報萃取與過濾 SOP：
+    
+    1. 【地域限制 - 專注台灣】：
+       - 實體活動（演唱會、見面會、簽售會、快閃店、展覽）：【必須在台灣（包含台北、高雄、林口、桃園等）】。嚴格剔除香港、澳門、韓國、日本等海外活動。
+       - 全球性情報（發布新歌、回歸、出新專輯、影視作品上映、國際品牌代言）：不限地區，請一律保留。
+       
+    2. 【動態時間過濾】（非常重要，請以今天日期 {today_str} 為基準核對）：
+       - 單次性活動（演唱會、簽售會、頒獎典禮）：如果活動舉辦日期「已經過去」，請【直接剔除】（例如已經辦完的大巨蛋演唱會、過去的音樂節）。
+       - 持續性活動（超商聯名、快閃店、品牌代言）：如果今天還在「活動效期內」，請保留；若活動已明確結束，請剔除。
+       
+    3. 【無情過濾垃圾】：剔除網友八卦、吵架、單純機場穿搭、無明確企劃的農場文。
     
     輸出規定：
     - 絕對不要有任何問候語、廢話或開場白。
-    - 格式：🔥 [藝人/團體] | [情報種類] | [發生地點或備註] | 詳情：[重點資訊]
+    - 格式：🔥 [藝人/團體] | [情報種類] | [時間與地點/備註] | 詳情：[重點資訊]
     - 🔗 每個活動【只能保留一個】最具代表性的新聞代號，直接輸出代號（如：[LINK_01]）。
     """
     
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
     
-    # 保持大腦解鎖狀態
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "safetySettings": [
@@ -101,7 +106,7 @@ def fetch_and_send():
         ]
     }
     
-    send_to_discord("⏳ 啟動終極大腦 (30天保鮮版)！正在分析全網最新情報...")
+    send_to_discord("⏳ 啟動動態日曆過濾！正在為您篩選最新鮮的台灣情報...")
     
     max_retries = 5
     for attempt in range(max_retries):
