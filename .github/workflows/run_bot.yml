@@ -2,7 +2,9 @@ name: KPOP Bot Daily Run
 
 on:
   schedule:
-    - cron: '17 3,15 * * *'
+    # 改用極度冷門的分鐘數 (43分)，並提早到 UTC 2點和14點
+    # 對應台灣時間：早上 10:43 以及 晚上 22:43
+    - cron: '43 2,14 * * *'
   workflow_dispatch:
 
 jobs:
